@@ -141,11 +141,23 @@ async function request<T>(path: string, init: RequestInit, options?: RequestOpti
     }
   }
 
-  const response = await fetch(buildUrl(path), {
-    ...init,
-    headers,
-    signal: options?.signal
-  });
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path), {
+      ...init,
+      headers,
+      signal: options?.signal
+    });
+  } catch (error) {
+    const baseUrl = getApiBaseUrl();
+    throw new ApiError(
+      `Impossibile raggiungere il backend API su ${baseUrl}. Verifica che il servizio sia attivo.`,
+      0,
+      {
+        cause: error instanceof Error ? error.message : String(error)
+      }
+    );
+  }
 
   if (response.status === 401 && authEnabled && retryAuth) {
     const refreshed = await refreshAccessToken();

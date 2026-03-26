@@ -1,10 +1,13 @@
 // GMD Medical Platform - Tauri Backend
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::Manager;
+
+struct ApiProcessState(Mutex<Option<Child>>);
 
 #[tauri::command]
 fn convert_docx_to_pdf(docx_path: String, output_pdf_path: Option<String>) -> Result<String, String> {
@@ -204,6 +207,115 @@ fn show_main_and_close_splash(app: &tauri::AppHandle) {
     }
 }
 
+fn is_local_api_running() -> bool {
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], 8787)),
+        Duration::from_millis(250),
+    )
+    .is_ok()
+}
+
+fn pick_existing_path(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates.iter().find(|candidate| candidate.exists()).cloned()
+}
+
+fn node_command_candidates(resource_dir: &Path) -> Vec<String> {
+    let mut candidates: Vec<String> = Vec::new();
+
+    if let Ok(value) = std::env::var("GMD_NODE_PATH") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            candidates.push(trimmed.to_string());
+        }
+    }
+
+    candidates.push(path_to_string(&resource_dir.join("node").join("bin").join("node")));
+    candidates.push("/opt/homebrew/bin/node".to_string());
+    candidates.push("/usr/local/bin/node".to_string());
+    candidates.push("/usr/bin/node".to_string());
+    candidates.push("node".to_string());
+
+    candidates
+}
+
+fn start_embedded_api_if_needed(app: &tauri::AppHandle) {
+    if cfg!(debug_assertions) {
+        return;
+    }
+
+    if is_local_api_running() {
+        return;
+    }
+
+    let resource_dir = match app.path().resource_dir() {
+        Ok(path) => path,
+        Err(error) => {
+            eprintln!("Impossibile risolvere resource_dir per API embedded: {error}");
+            return;
+        }
+    };
+
+    let api_entry_candidates = vec![
+        resource_dir.join("server").join("dist").join("index.js"),
+        resource_dir.join("_up_").join("server").join("dist").join("index.js"),
+        resource_dir.join("dist").join("index.js"),
+        resource_dir.join("_up_").join("dist").join("index.js"),
+    ];
+    let api_entry = match pick_existing_path(&api_entry_candidates) {
+        Some(path) => path,
+        None => {
+            eprintln!(
+                "API embedded non trovata nel bundle. Candidati: {:?}",
+                api_entry_candidates
+            );
+            return;
+        }
+    };
+
+    let env_candidates = vec![
+        api_entry.parent().map(|parent| parent.join(".env")),
+        Some(resource_dir.join("server").join(".env.prod")),
+        Some(resource_dir.join("_up_").join("server").join(".env.prod")),
+        Some(resource_dir.join(".env.prod")),
+        Some(resource_dir.join("_up_").join(".env.prod")),
+    ];
+    let env_file = env_candidates
+        .into_iter()
+        .flatten()
+        .find(|candidate| candidate.exists());
+
+    let mut errors: Vec<String> = Vec::new();
+    for node_candidate in node_command_candidates(&resource_dir) {
+        let mut command = Command::new(&node_candidate);
+        command
+            .arg(&api_entry)
+            .current_dir(api_entry.parent().unwrap_or(&resource_dir))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        if let Some(path) = &env_file {
+            command.env("GMD_ENV_FILE", path);
+        }
+
+        match command.spawn() {
+            Ok(child) => {
+                if let Ok(mut guard) = app.state::<ApiProcessState>().0.lock() {
+                    *guard = Some(child);
+                }
+                return;
+            }
+            Err(error) => {
+                errors.push(format!("{node_candidate}: {error}"));
+            }
+        }
+    }
+
+    eprintln!(
+        "Errore avvio API embedded: impossibile trovare/eseguire Node runtime. Tentativi: {}",
+        errors.join(" | ")
+    );
+}
+
 #[tauri::command]
 fn set_app_ready(app: tauri::AppHandle) -> Result<(), String> {
     show_main_and_close_splash(&app);
@@ -328,11 +440,14 @@ fn convert_with_word_applescript(input_path: &Path, output_pdf: &Path) -> Result
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(ApiProcessState(Mutex::new(None)))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::new().build())
         .setup(|app| {
+            start_embedded_api_if_needed(&app.handle());
+
             let splash_window = tauri::WebviewWindowBuilder::new(
                 app,
                 "splashscreen",
@@ -371,6 +486,17 @@ pub fn run() {
             open_file_in_word,
             set_app_ready
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app_handle.try_state::<ApiProcessState>() {
+                    if let Ok(mut guard) = state.0.lock() {
+                        if let Some(mut child) = guard.take() {
+                            let _ = child.kill();
+                        }
+                    }
+                }
+            }
+        });
 }

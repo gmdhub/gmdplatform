@@ -229,6 +229,36 @@ fn node_command_candidates(resource_dir: &Path) -> Vec<String> {
         }
     }
 
+    candidates.push(path_to_string(
+        &resource_dir
+            .join("server")
+            .join("dist")
+            .join("runtime")
+            .join("node"),
+    ));
+    candidates.push(path_to_string(
+        &resource_dir
+            .join("_up_")
+            .join("server")
+            .join("dist")
+            .join("runtime")
+            .join("node"),
+    ));
+    candidates.push(path_to_string(
+        &resource_dir
+            .join("server")
+            .join("dist")
+            .join("runtime")
+            .join("node.exe"),
+    ));
+    candidates.push(path_to_string(
+        &resource_dir
+            .join("_up_")
+            .join("server")
+            .join("dist")
+            .join("runtime")
+            .join("node.exe"),
+    ));
     candidates.push(path_to_string(&resource_dir.join("node").join("bin").join("node")));
     candidates.push("/opt/homebrew/bin/node".to_string());
     candidates.push("/usr/local/bin/node".to_string());

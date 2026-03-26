@@ -112,6 +112,11 @@ jobs:
       - name: Generate production API env file
         shell: bash
         run: |
+          if [[ -z "${{ secrets.PROD_API_JWT_SECRET }}" || -z "${{ secrets.PROD_SUPABASE_DB_URL }}" || -z "${{ secrets.PROD_SUPABASE_PROJECT_REF }}" ]]; then
+            echo "Missing required production secrets: PROD_API_JWT_SECRET / PROD_SUPABASE_DB_URL / PROD_SUPABASE_PROJECT_REF"
+            exit 1
+          fi
+
           cat > server/.env.prod <<EOF
           APP_ENV=production
           API_HOST=0.0.0.0
@@ -215,6 +220,11 @@ jobs:
       - name: Generate production API env file
         shell: bash
         run: |
+          if [[ -z "${{ secrets.PROD_API_JWT_SECRET }}" || -z "${{ secrets.PROD_SUPABASE_DB_URL }}" || -z "${{ secrets.PROD_SUPABASE_PROJECT_REF }}" ]]; then
+            echo "Missing required production secrets: PROD_API_JWT_SECRET / PROD_SUPABASE_DB_URL / PROD_SUPABASE_PROJECT_REF"
+            exit 1
+          fi
+
           cat > server/.env.prod <<EOF
           APP_ENV=production
           API_HOST=0.0.0.0

@@ -130,6 +130,38 @@ function copyRuntimeEnvFile() {
     );
   }
 
+  const requiredKeys = [
+    'APP_ENV',
+    'API_HOST',
+    'API_PORT',
+    'API_JWT_SECRET',
+    'SUPABASE_DB_URL',
+    'SUPABASE_PROJECT_REF_EXPECTED',
+    'SUPABASE_PROD_PROJECT_REF'
+  ];
+
+  const envValues = new Map();
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const separatorIndex = line.indexOf('=');
+    if (separatorIndex <= 0) continue;
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1).trim();
+    envValues.set(key, value);
+  }
+
+  const missingOrEmptyKeys = requiredKeys.filter((key) => {
+    const value = envValues.get(key);
+    return !value || value.length === 0;
+  });
+
+  if (missingOrEmptyKeys.length > 0) {
+    throw new Error(
+      `[bundle] Runtime env missing/empty keys (${missingOrEmptyKeys.join(', ')}) in ${selected}. Build aborted.`
+    );
+  }
+
   console.log(`[bundle] API env file copied: ${selected} -> ${envOutputPath}`);
 }
 

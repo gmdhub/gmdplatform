@@ -35,6 +35,7 @@
   import type { AutocompleteItem } from '$lib/types/autocomplete';
   import type { GenerateVisitaRefertoInput } from '$lib/reports/generateVisitaReferto';
   import { sidebarCollapsedStore } from '$lib/stores/sidebar';
+  import { toastStore } from '$lib/stores/toast';
 
   let ambulatorioId: number;
   let pazienti: Paziente[] = [];
@@ -194,7 +195,7 @@
       selectedPazienteVisite = visite.map((visita) => ({
         ...visita,
         medico_label: [visita.medico_cognome, visita.medico_nome].filter(Boolean).join(' ') || '-',
-        versione_label: visita.is_current_version === 0 ? 'Versione precedente' : 'Versione corrente'
+        versione_label: visita.is_current_version === 0 ? 'Versione precedente' : 'Versione definitiva'
       }));
     } catch (error) {
       console.error('Errore caricamento visite paziente:', error);
@@ -225,6 +226,15 @@
     }
 
     return 'Errore sconosciuto';
+  }
+
+  async function safeExists(path: string): Promise<boolean> {
+    try {
+      return await exists(path);
+    } catch (error) {
+      console.warn(`Permission check failed for path "${path}":`, getErrorMessage(error));
+      return false;
+    }
   }
 
   async function buildVisitaRefertoInput(visita: Visita): Promise<GenerateVisitaRefertoInput> {
@@ -296,22 +306,48 @@
       ]);
       const reportInput = await buildVisitaRefertoInput(visita);
       const { docxPath, pdfPath } = await resolveVisitaRefertoOutputPaths(reportInput);
+      const legacyPdfPath = docxPath.replace(/\.docx$/i, '.pdf');
 
       let resolvedPdfPath = pdfPath;
-      if (!(await exists(pdfPath))) {
+      if (!(await safeExists(resolvedPdfPath)) && (await safeExists(legacyPdfPath))) {
+        resolvedPdfPath = legacyPdfPath;
+      }
+
+      if (!(await safeExists(resolvedPdfPath))) {
         let sourceDocxPath = docxPath;
 
-        if (!(await exists(docxPath))) {
+        if (!(await safeExists(docxPath))) {
           const reportResult = await generateVisitaReferto(reportInput);
           if (!reportResult.saved || !reportResult.path) {
             throw new Error('Impossibile generare il referto DOCX');
           }
           sourceDocxPath = reportResult.path;
+          if (reportResult.pdfPath && (await safeExists(reportResult.pdfPath))) {
+            resolvedPdfPath = reportResult.pdfPath;
+          }
         }
 
-        resolvedPdfPath = await invoke<string>('convert_docx_to_pdf', {
-          docxPath: sourceDocxPath
-        });
+        if (!(await safeExists(resolvedPdfPath))) {
+          try {
+            resolvedPdfPath = await invoke<string>('convert_docx_to_pdf', {
+              docxPath: sourceDocxPath,
+              outputPdfPath: pdfPath
+            });
+            if (!(await safeExists(resolvedPdfPath))) {
+              resolvedPdfPath = await invoke<string>('convert_docx_to_pdf', {
+                docxPath: sourceDocxPath
+              });
+            }
+          } catch (errorWithOutputPath) {
+            resolvedPdfPath = await invoke<string>('convert_docx_to_pdf', {
+              docxPath: sourceDocxPath
+            });
+            console.warn(
+              'Fallback conversione PDF in modalità legacy:',
+              getErrorMessage(errorWithOutputPath)
+            );
+          }
+        }
       }
 
       const pdfBytes = await readFile(resolvedPdfPath);
@@ -436,8 +472,10 @@
       }
       await loadPazienti();
       showModal = false;
+      toastStore.show('success', editingPaziente ? 'Paziente aggiornato con successo' : 'Paziente creato con successo');
     } catch (error) {
       console.error('Errore salvataggio paziente:', error);
+      toastStore.show('error', `Errore salvataggio paziente: ${getErrorMessage(error)}`);
     }
   }
 
@@ -451,6 +489,7 @@
       pazienteToDelete = null;
     } catch (error) {
       console.error('Errore eliminazione paziente:', error);
+      toastStore.show('error', `Errore eliminazione paziente: ${getErrorMessage(error)}`);
     }
   }
 
@@ -489,8 +528,8 @@
       format: (value: string) => formatDate(value)
     },
     { key: 'tipo_visita', label: 'Tipo Visita', width: '16%' },
-    { key: 'versione_label', label: 'Versione', width: '20%' },
     { key: 'motivo', label: 'Motivo', width: '30%' },
+    { key: 'versione_label', label: 'Stato', width: '20%' },
     { key: 'medico_label', label: 'Medico', width: '18%' }
   ];
 
@@ -632,6 +671,17 @@
                 emptyMessage="Nessuna visita trovata per questo paziente"
                 showActions={true}
               >
+                <svelte:fragment slot="cell" let:row let:column>
+                  {#if column.key === 'tipo_visita'}
+                    <span class="visita-tipo-nowrap" title={row[column.key] || '-'}>
+                      {row[column.key] || '-'}
+                    </span>
+                  {:else if column.format && row[column.key]}
+                    {column.format(row[column.key])}
+                  {:else}
+                    {row[column.key] || '-'}
+                  {/if}
+                </svelte:fragment>
                 <svelte:fragment slot="actions" let:row>
                   <button
                     class="btn-icon"
@@ -1123,6 +1173,13 @@
   .report-preview-error {
     color: var(--color-danger, #b91c1c);
     font-weight: 500;
+  }
+
+  .visita-tipo-nowrap {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   :global(.btn-icon) {

@@ -1,11 +1,19 @@
 // GMD Medical Platform - Visite Database Functions
 import { insertReturningId } from './client';
+import { isApiDataProvider } from './config';
 import { initDatabase } from './schema';
 import {
   getVisitaEditDeleteLockedMessage,
   getVisitaPreviousVersionLockedMessage,
   isVisitaWithinEditDeleteWindow
 } from '../utils/visite-permissions';
+import {
+  createVisitaFromApi,
+  deleteVisitaFromApi,
+  getVisitaByIdFromApi,
+  listVisiteFromApi,
+  updateVisitaFromApi
+} from '$lib/services/visite-service';
 import type {
   CreateVisitaInput,
   EsameEmaticoKey,
@@ -210,6 +218,10 @@ function getCurrentOnlyWhereClause(currentOnly?: boolean): string {
 }
 
 export async function getAllVisite(): Promise<Visita[]> {
+  if (isApiDataProvider()) {
+    return listVisiteFromApi();
+  }
+
   const db = await initDatabase();
   return db.select<Visita[]>(`
     SELECT
@@ -230,6 +242,13 @@ export async function getVisiteByAmbulatorio(
   ambulatorioId: number,
   options?: { currentOnly?: boolean }
 ): Promise<Visita[]> {
+  if (isApiDataProvider()) {
+    return listVisiteFromApi({
+      ambulatorio_id: ambulatorioId,
+      current_only: options?.currentOnly
+    });
+  }
+
   const db = await initDatabase();
   return db.select<Visita[]>(
     `SELECT
@@ -257,6 +276,13 @@ export async function getVisiteByPaziente(
   pazienteId: number,
   options?: { currentOnly?: boolean }
 ): Promise<Visita[]> {
+  if (isApiDataProvider()) {
+    return listVisiteFromApi({
+      paziente_id: pazienteId,
+      current_only: options?.currentOnly
+    });
+  }
+
   const db = await initDatabase();
   return db.select<Visita[]>(
     `SELECT
@@ -285,6 +311,14 @@ export async function searchVisite(
   ambulatorioId?: number,
   options?: { currentOnly?: boolean }
 ): Promise<Visita[]> {
+  if (isApiDataProvider()) {
+    return listVisiteFromApi({
+      ambulatorio_id: ambulatorioId,
+      search: query,
+      current_only: options?.currentOnly
+    });
+  }
+
   const db = await initDatabase();
   const searchTerm = `%${query}%`;
 
@@ -324,6 +358,10 @@ export async function searchVisite(
 }
 
 export async function getVisitaById(id: number): Promise<Visita | null> {
+  if (isApiDataProvider()) {
+    return getVisitaByIdFromApi(id);
+  }
+
   const db = await initDatabase();
   const visite = await db.select<Visita[]>(
     `SELECT
@@ -347,28 +385,51 @@ export async function getPreviousEsamiEmaticiByPaziente(params: {
   beforeDate: string;
   excludeVisitaId?: number;
 }): Promise<PreviousEsamiEmaticiMap> {
-  const db = await initDatabase();
-  const queryParams: unknown[] = [normalizeIntegerForWrite(params.pazienteId)];
-  let sql = `
-    SELECT id, data_visita, esami_ematici
-    FROM visite
-    WHERE paziente_id = ?
-      AND COALESCE(is_current_version, 1) = 1
-      AND esami_ematici IS NOT NULL
-      AND TRIM(esami_ematici) <> ''
-  `;
+  let rows: Array<{ id: number; data_visita: string; esami_ematici: string | null }>;
+  if (isApiDataProvider()) {
+    const visits = await listVisiteFromApi({
+      paziente_id: params.pazienteId,
+      current_only: true
+    });
 
-  if (params.excludeVisitaId !== undefined) {
-    queryParams.push(normalizeIntegerForWrite(params.excludeVisitaId));
-    sql += ' AND id != ?';
+    rows = visits
+      .filter((visit) => {
+        if (params.excludeVisitaId !== undefined && visit.id === params.excludeVisitaId) {
+          return false;
+        }
+        const raw = visit.esami_ematici ?? '';
+        return typeof raw === 'string' && raw.trim() !== '';
+      })
+      .map((visit) => ({
+        id: visit.id,
+        data_visita: visit.data_visita,
+        esami_ematici: visit.esami_ematici ?? null
+      }));
+  } else {
+    const db = await initDatabase();
+    const queryParams: unknown[] = [normalizeIntegerForWrite(params.pazienteId)];
+    let sql = `
+      SELECT id, data_visita, esami_ematici
+      FROM visite
+      WHERE paziente_id = ?
+        AND COALESCE(is_current_version, 1) = 1
+        AND esami_ematici IS NOT NULL
+        AND TRIM(esami_ematici) <> ''
+    `;
+
+    if (params.excludeVisitaId !== undefined) {
+      queryParams.push(normalizeIntegerForWrite(params.excludeVisitaId));
+      sql += ' AND id != ?';
+    }
+
+    sql += ' ORDER BY id DESC';
+
+    rows = await db.select<Array<{ id: number; data_visita: string; esami_ematici: string | null }>>(
+      sql,
+      queryParams
+    );
   }
 
-  sql += ' ORDER BY id DESC';
-
-  const rows = await db.select<Array<{ id: number; data_visita: string; esami_ematici: string | null }>>(
-    sql,
-    queryParams
-  );
   const normalizedBeforeDate = normalizeExamDateForComparison(params.beforeDate);
   const isDateOnlyFilter = /^\d{4}-\d{2}-\d{2}$/.test(params.beforeDate.trim());
   const includeSameDateTime = params.excludeVisitaId !== undefined;
@@ -447,6 +508,10 @@ export async function getPreviousEsamiEmaticiByPaziente(params: {
 }
 
 export async function createVisita(input: CreateVisitaInput): Promise<number> {
+  if (isApiDataProvider()) {
+    return createVisitaFromApi(input);
+  }
+
   await initDatabase();
 
   return insertReturningId(
@@ -491,6 +556,11 @@ export async function createVisita(input: CreateVisitaInput): Promise<number> {
 }
 
 export async function updateVisita(input: UpdateVisitaInput): Promise<void> {
+  if (isApiDataProvider()) {
+    await updateVisitaFromApi(input);
+    return;
+  }
+
   const db = await initDatabase();
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -596,6 +666,11 @@ export async function updateVisita(input: UpdateVisitaInput): Promise<void> {
 }
 
 export async function deleteVisita(id: number): Promise<void> {
+  if (isApiDataProvider()) {
+    await deleteVisitaFromApi(id);
+    return;
+  }
+
   await assertVisitaEditableOrDeletable(id);
   const db = await initDatabase();
   await db.execute('DELETE FROM visite WHERE id = ?', [normalizeIntegerForWrite(id)]);

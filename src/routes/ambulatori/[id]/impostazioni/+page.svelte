@@ -21,11 +21,13 @@
   import PageHeader from '$lib/components/PageHeader.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import type { User, UpsertAmbulatorioOperatingWindowInput } from '$lib/db/types';
+  import { ApiError } from '$lib/services/http-client';
   import {
     getDefaultDatabaseDirectory,
     getRuntimeDatabaseDirectory,
     getRuntimeDatabasePath,
-    getRuntimeDatabaseUrl
+    getRuntimeDatabaseUrl,
+    isApiDataProvider
   } from '$lib/db/config';
   import { switchDatabaseDirectory } from '$lib/db/database-switch';
   import {
@@ -39,6 +41,7 @@
   $: user = $authStore.user;
   $: isAdmin = user?.role === 'admin';
   $: canEditOperatingSettings = user?.role === 'admin' || user?.role === 'medico';
+  const apiMode = isApiDataProvider();
 
   let activeTab: 'ambulatorio' | 'utenti' | 'backup' | 'integrazioni' | 'sistema' = 'ambulatorio';
   let saving = false;
@@ -235,7 +238,11 @@
       toastStore.show('success', 'Orari ambulatorio aggiornati con successo');
     } catch (error) {
       console.error('Errore salvataggio orari ambulatorio:', error);
-      toastStore.show('error', `Errore salvataggio orari ambulatorio: ${getErrorMessage(error)}`);
+      const validationMessage = getApiValidationMessage(error);
+      toastStore.show(
+        'error',
+        validationMessage ?? `Errore salvataggio orari ambulatorio: ${getErrorMessage(error)}`
+      );
     } finally {
       savingOperatingSettings = false;
     }
@@ -298,7 +305,11 @@
       await loadUsers();
     } catch (error) {
       console.error('Errore salvataggio utente:', error);
-      toastStore.show('error', 'Errore durante il salvataggio dell\'utente');
+      const validationMessage = getApiValidationMessage(error);
+      toastStore.show(
+        'error',
+        validationMessage ?? `Errore durante il salvataggio dell'utente: ${getErrorMessage(error)}`
+      );
     }
   }
 
@@ -358,6 +369,40 @@
     }
 
     return 'Errore sconosciuto';
+  }
+
+  function getApiValidationMessage(error: unknown): string | null {
+    if (!(error instanceof ApiError) || error.status !== 400 || !error.payload || typeof error.payload !== 'object') {
+      return null;
+    }
+
+    const payload = error.payload as Record<string, unknown>;
+    const detailEntries: Array<Record<string, unknown>> = [];
+
+    if (Array.isArray(payload.details)) {
+      detailEntries.push(
+        ...payload.details.filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object'))
+      );
+    } else if (payload.details && typeof payload.details === 'object') {
+      const grouped = payload.details as Record<string, unknown>;
+      for (const value of Object.values(grouped)) {
+        if (Array.isArray(value)) {
+          detailEntries.push(
+            ...value.filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object'))
+          );
+        }
+      }
+    }
+
+    if (detailEntries.length === 0) {
+      return null;
+    }
+
+    const first = detailEntries[0];
+    const path = Array.isArray(first.path) ? first.path.map((segment) => String(segment)).join('.') : '';
+    const message = typeof first.message === 'string' ? first.message : 'Valore non valido';
+
+    return path ? `Errore validazione (${path}): ${message}` : `Errore validazione: ${message}`;
   }
 
   onMount(() => {
@@ -1090,7 +1135,7 @@
               </div>
               <div class="info-item">
                 <span class="info-label">Database</span>
-                <span class="info-value">SQLite</span>
+                <span class="info-value">{apiMode ? 'PostgreSQL (Supabase)' : 'SQLite'}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">Runtime</span>
@@ -1108,79 +1153,100 @@
             {#if loadingDatabaseSettings}
               <div class="loading-state">Caricamento cartella database...</div>
             {:else}
-              <div class="report-settings">
-                <Input
-                  id="databaseDirectory"
-                  type="text"
-                  label="Cartella database"
-                  bind:value={databaseDirectory}
-                  placeholder="Percorso assoluto della cartella database"
-                  disabled={!isAdmin || switchingDatabaseDirectory}
-                />
+              {#if apiMode}
+                <div class="info-grid">
+                  <div class="info-item">
+                    <span class="info-label">Tipo</span>
+                    <span class="info-value">PostgreSQL remoto (Supabase)</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label">Provider dati</span>
+                    <span class="info-value">API (senza fallback SQLite)</span>
+                  </div>
+                  <div class="info-item full-width">
+                    <span class="info-label">Endpoint runtime</span>
+                    <span class="info-value">{runtimeDatabaseUrl}</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label">Stato</span>
+                    <span class="status-badge status-active">Connesso</span>
+                  </div>
+                </div>
+              {:else}
+                <div class="report-settings">
+                  <Input
+                    id="databaseDirectory"
+                    type="text"
+                    label="Cartella database"
+                    bind:value={databaseDirectory}
+                    placeholder="Percorso assoluto della cartella database"
+                    disabled={!isAdmin || switchingDatabaseDirectory}
+                  />
 
-                {#if !isAdmin}
-                  <p class="report-help">
-                    Solo gli amministratori possono modificare la cartella del database.
+                  {#if !isAdmin}
+                    <p class="report-help">
+                      Solo gli amministratori possono modificare la cartella del database.
+                    </p>
+                  {/if}
+
+                  <p class="report-default-path">
+                    Percorso predefinito: <span>{defaultDatabaseDirectory}</span>
                   </p>
-                {/if}
 
-                <p class="report-default-path">
-                  Percorso predefinito: <span>{defaultDatabaseDirectory}</span>
-                </p>
+                  <div class="report-actions">
+                    <button
+                      type="button"
+                      class="btn-secondary btn-with-icon"
+                      on:click={handleChooseDatabaseDirectory}
+                      disabled={!isAdmin || switchingDatabaseDirectory}
+                    >
+                      <Icon name="folder-open" size={18} />
+                      <span>Scegli Cartella</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-primary btn-with-icon"
+                      on:click={handleApplyDatabaseDirectory}
+                      disabled={!isAdmin || switchingDatabaseDirectory}
+                    >
+                      <Icon name="save" size={18} />
+                      <span>{switchingDatabaseDirectory ? 'Applicazione in corso...' : 'Applica e Migra'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-secondary btn-with-icon"
+                      on:click={handleResetDatabaseDirectory}
+                      disabled={!isAdmin || switchingDatabaseDirectory}
+                    >
+                      <Icon name="rotate-ccw" size={18} />
+                      <span>Ripristina Predefinito</span>
+                    </button>
+                  </div>
+                </div>
 
-                <div class="report-actions">
-                  <button
-                    type="button"
-                    class="btn-secondary btn-with-icon"
-                    on:click={handleChooseDatabaseDirectory}
-                    disabled={!isAdmin || switchingDatabaseDirectory}
-                  >
-                    <Icon name="folder-open" size={18} />
-                    <span>Scegli Cartella</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="btn-primary btn-with-icon"
-                    on:click={handleApplyDatabaseDirectory}
-                    disabled={!isAdmin || switchingDatabaseDirectory}
-                  >
-                    <Icon name="save" size={18} />
-                    <span>{switchingDatabaseDirectory ? 'Applicazione in corso...' : 'Applica e Migra'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="btn-secondary btn-with-icon"
-                    on:click={handleResetDatabaseDirectory}
-                    disabled={!isAdmin || switchingDatabaseDirectory}
-                  >
-                    <Icon name="rotate-ccw" size={18} />
-                    <span>Ripristina Predefinito</span>
-                  </button>
+                <div class="info-grid">
+                  <div class="info-item">
+                    <span class="info-label">Tipo</span>
+                    <span class="info-value">SQLite Locale</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label">URL Runtime</span>
+                    <span class="info-value">{runtimeDatabaseUrl}</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label">Percorso attivo</span>
+                    <span class="info-value">{runtimeDatabasePath}</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label">Cartella attiva</span>
+                    <span class="info-value">{databaseDirectory}</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="info-label">Stato</span>
+                    <span class="status-badge status-active">Connesso</span>
+                  </div>
                 </div>
-              </div>
-
-              <div class="info-grid">
-                <div class="info-item">
-                  <span class="info-label">Tipo</span>
-                  <span class="info-value">SQLite Locale</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">URL Runtime</span>
-                  <span class="info-value">{runtimeDatabaseUrl}</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">Percorso attivo</span>
-                  <span class="info-value">{runtimeDatabasePath}</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">Cartella attiva</span>
-                  <span class="info-value">{databaseDirectory}</span>
-                </div>
-                <div class="info-item">
-                  <span class="info-label">Stato</span>
-                  <span class="status-badge status-active">Connesso</span>
-                </div>
-              </div>
+              {/if}
             {/if}
           </div>
 

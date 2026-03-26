@@ -8,6 +8,7 @@ import type {
   LDLSource,
   PianificazioneFollowUp,
   RischioCVLevel,
+  RischioCVStatus,
   StatinaSelection,
   TerapiaIpolipemizzante,
   TitoloFirmaMedico,
@@ -511,7 +512,7 @@ function createEmptyEzetimibeSelection(): EzetimibeSelection {
   };
 }
 
-function toNullableNumber(value: string | number | null | undefined): number | null {
+function toNullableNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
 
   const normalized = String(value).replace(',', '.').trim();
@@ -614,15 +615,63 @@ export function normalizeRischioCVLevel(value: unknown): RischioCVLevel {
   return '';
 }
 
+function normalizeRischioCVStatus(value: unknown): RischioCVStatus | '' {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+
+  const compact = normalized.replace(/[\s-]+/g, '_');
+
+  if (compact === 'raggiunto' || compact === 'at_target' || compact === 'in_target') {
+    return 'raggiunto';
+  }
+
+  if (
+    compact === 'non_raggiunto' ||
+    compact === 'not_at_target' ||
+    compact === 'not_reached' ||
+    compact === 'fuori_target'
+  ) {
+    return 'non_raggiunto';
+  }
+
+  if (compact === 'non_valutabile' || compact === 'not_evaluable' || compact === 'non_valutato') {
+    return 'non_valutabile';
+  }
+
+  return '';
+}
+
+function normalizeLdlSource(value: unknown): LDLSource {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+
+  if (normalized === 'diretto' || normalized === 'direct') return 'diretto';
+  if (normalized === 'calcolato' || normalized === 'calculated') return 'calcolato';
+  return '';
+}
+
+function normalizeTextValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 export function normalizeValutazioneRischioCV(
   input: Partial<ValutazioneRischioCardiovascolare> | null | undefined,
   esami: EsamiEmaticiValues
 ): ValutazioneRischioCardiovascolare {
-  const merged = {
-    ...createEmptyValutazioneRischioCV(),
-    ...(input || {})
-  };
-  const rischio: RischioCVLevel = normalizeRischioCVLevel(merged.rischio);
+  const rawInput = (input || {}) as Record<string, unknown>;
+  const rischio: RischioCVLevel = normalizeRischioCVLevel(rawInput.rischio ?? rawInput.risk_level);
   const ldl = resolveCurrentLdl(normalizeEsamiEmatici(esami));
 
   if (!rischio) {
@@ -636,26 +685,50 @@ export function normalizeValutazioneRischioCV(
     };
   }
 
-  const targetLdl = rischioTargets[rischio];
-  if (ldl.value === null) {
+  const explicitTargetLdl = toNullableNumber(rawInput.targetLdl ?? rawInput.target_ldl);
+  const explicitCurrentLdl = toNullableNumber(rawInput.ldlAttuale ?? rawInput.current_ldl);
+  const explicitLdlSource = normalizeLdlSource(rawInput.ldlSource ?? rawInput.ldl_source);
+  const explicitStatus = normalizeRischioCVStatus(rawInput.status);
+  const explicitStatusMessage = normalizeTextValue(rawInput.statusMessage ?? rawInput.status_message);
+
+  const targetLdl = explicitTargetLdl ?? rischioTargets[rischio];
+  const currentLdl = explicitCurrentLdl ?? ldl.value;
+  const ldlSource =
+    explicitLdlSource || (currentLdl !== null && currentLdl === ldl.value ? ldl.source : '');
+
+  let status: RischioCVStatus = 'non_valutabile';
+  if (explicitStatus) {
+    status = explicitStatus;
+  } else if (currentLdl !== null && targetLdl !== null) {
+    status = currentLdl < targetLdl ? 'raggiunto' : 'non_raggiunto';
+  }
+
+  const statusMessage =
+    explicitStatusMessage ||
+    (status === 'raggiunto'
+      ? 'Target raggiunto'
+      : status === 'non_raggiunto'
+        ? 'Target non raggiunto'
+        : 'Inserire LDL diretto o LDL calcolato');
+
+  if (currentLdl === null) {
     return {
       rischio,
       targetLdl,
       ldlAttuale: null,
-      ldlSource: '',
-      status: 'non_valutabile',
-      statusMessage: 'Inserire LDL diretto o LDL calcolato'
+      ldlSource,
+      status,
+      statusMessage
     };
   }
 
-  const status = ldl.value < targetLdl ? 'raggiunto' : 'non_raggiunto';
   return {
     rischio,
     targetLdl,
-    ldlAttuale: ldl.value,
-    ldlSource: ldl.source,
+    ldlAttuale: currentLdl,
+    ldlSource,
     status,
-    statusMessage: status === 'raggiunto' ? 'Target raggiunto' : 'Target non raggiunto'
+    statusMessage
   };
 }
 

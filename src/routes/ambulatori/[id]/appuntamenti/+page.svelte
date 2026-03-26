@@ -18,6 +18,7 @@
   import { ambulatorioStore } from '$lib/stores/ambulatorio';
   import { toastStore } from '$lib/stores/toast';
   import {
+    VISIT_SETTINGS_REQUIRED_MESSAGE,
     createAppuntamentoManuale,
     deleteAppuntamento,
     findFirstQuarterHourSlot,
@@ -28,7 +29,7 @@
     updateAppuntamento
   } from '$lib/db/appuntamenti';
   import { getAmbulatorioOperatingSettingsById } from '$lib/db/ambulatori';
-  import { createPazienteRapido, getAllPazienti } from '$lib/db/pazienti';
+  import { createPazienteRapido, getPazientiByAmbulatorio } from '$lib/db/pazienti';
   import type {
     AmbulatorioOperatingSettings,
     Appuntamento,
@@ -67,9 +68,9 @@
     timeGridDay: 'Giorno'
   };
 
-  const CALENDAR_VISIBLE_START_TIME = '08:00:00';
-  const CALENDAR_VISIBLE_END_TIME = '20:00:00';
-  const DEFAULT_APPOINTMENT_DURATION_MINUTES = 15;
+  const MIN_ALLOWED_VISIT_DURATION_MINUTES = 10;
+  const CALENDAR_FALLBACK_MIN_TIME = '00:00:00';
+  const CALENDAR_FALLBACK_MAX_TIME = '24:00:00';
   const MIN_PATIENT_SEARCH_CHARS = 2;
   const MAX_PATIENT_SUGGESTIONS = 10;
   const calendarPlugins = [dayGridPlugin, timeGridPlugin, interactionPlugin];
@@ -95,9 +96,9 @@
   let daysWithAppointments = new Set<string>();
   let patients: Paziente[] = [];
   let operatingSettings: AmbulatorioOperatingSettings | null = null;
-  let standardVisitDurationMinutes = DEFAULT_APPOINTMENT_DURATION_MINUTES;
-  let calendarSlotMinTime = CALENDAR_VISIBLE_START_TIME;
-  let calendarSlotMaxTime = CALENDAR_VISIBLE_END_TIME;
+  let standardVisitDurationMinutes = 0;
+  let calendarSlotMinTime = CALENDAR_FALLBACK_MIN_TIME;
+  let calendarSlotMaxTime = CALENDAR_FALLBACK_MAX_TIME;
   let calendarSlotDuration = '00:15:00';
   let calendarBusinessHours: CalendarOptions['businessHours'] = false;
   let loadedAmbulatorioId = 0;
@@ -115,8 +116,8 @@
   let appointmentForm: AppointmentFormState = {
     pazienteId: 0,
     date: formatDateOnly(today),
-    startTime: '08:00',
-    endTime: '08:15',
+    startTime: '00:00',
+    endTime: '00:15',
     motivo: ''
   };
   let quickPatientForm: QuickPatientFormState = {
@@ -175,10 +176,9 @@
     patientSearchFocused &&
     !showSelectedPatientCheck &&
     normalizedPatientSearchTerm.length >= MIN_PATIENT_SEARCH_CHARS;
-  $: standardVisitDurationMinutes = Math.max(
-    10,
-    operatingSettings?.durataStandardVisitaMinuti ?? DEFAULT_APPOINTMENT_DURATION_MINUTES
-  );
+  $: standardVisitDurationMinutes = hasConfiguredVisitTimingSettings(operatingSettings)
+    ? Number(operatingSettings.durataStandardVisitaMinuti)
+    : 0;
   $: {
     if (ambulatorioId > 0 && ambulatorioId !== loadedAmbulatorioId) {
       loadedAmbulatorioId = ambulatorioId;
@@ -193,6 +193,62 @@
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  }
+
+  function parseTimeToMinutes(value: string): number | null {
+    const match = value.trim().match(/^(\d{2}):(\d{2})$/);
+    if (!match) {
+      return null;
+    }
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (
+      Number.isNaN(hours) ||
+      Number.isNaN(minutes) ||
+      hours < 0 ||
+      hours > 23 ||
+      minutes < 0 ||
+      minutes > 59
+    ) {
+      return null;
+    }
+
+    return (hours * 60) + minutes;
+  }
+
+  function hasConfiguredVisitTimingSettings(
+    settings: AmbulatorioOperatingSettings | null
+  ): settings is AmbulatorioOperatingSettings {
+    if (!settings) {
+      return false;
+    }
+
+    const minDuration = Number(settings.durataMinimaVisitaMinuti);
+    const standardDuration = Number(settings.durataStandardVisitaMinuti);
+    if (
+      !Number.isInteger(minDuration) ||
+      minDuration < MIN_ALLOWED_VISIT_DURATION_MINUTES ||
+      !Number.isInteger(standardDuration) ||
+      standardDuration < minDuration
+    ) {
+      return false;
+    }
+
+    return settings.windows.some((window) => {
+      const startMinutes = parseTimeToMinutes(window.ora_inizio);
+      const endMinutes = parseTimeToMinutes(window.ora_fine);
+      return startMinutes !== null && endMinutes !== null && startMinutes < endMinutes;
+    });
+  }
+
+  function ensureVisitTimingSettingsConfigured(): boolean {
+    if (hasConfiguredVisitTimingSettings(operatingSettings)) {
+      return true;
+    }
+
+    toastStore.show('error', VISIT_SETTINGS_REQUIRED_MESSAGE);
+    return false;
   }
 
   function resetQuickPatientForm(): void {
@@ -660,6 +716,13 @@
     return `${hours}:${remainingMinutes}:00`;
   }
 
+  function minutesToCalendarTime(totalMinutes: number): string {
+    const normalized = Math.min(Math.max(totalMinutes, 0), 24 * 60);
+    const hours = String(Math.floor(normalized / 60)).padStart(2, '0');
+    const minutes = String(normalized % 60).padStart(2, '0');
+    return `${hours}:${minutes}:00`;
+  }
+
   function getErrorMessage(error: unknown): string {
     if (error instanceof Error && error.message) {
       return error.message;
@@ -691,19 +754,36 @@
   }
 
   function applyCalendarOperatingSettings(settings: AmbulatorioOperatingSettings | null): void {
-    const windows = settings?.windows ?? [];
-    const standardDuration = Math.max(
-      10,
-      settings?.durataStandardVisitaMinuti ?? DEFAULT_APPOINTMENT_DURATION_MINUTES
-    );
-    calendarSlotDuration = getDurationStringFromMinutes(standardDuration);
-    calendarSlotMinTime = CALENDAR_VISIBLE_START_TIME;
-    calendarSlotMaxTime = CALENDAR_VISIBLE_END_TIME;
-
-    if (windows.length === 0) {
+    if (!hasConfiguredVisitTimingSettings(settings)) {
       calendarBusinessHours = false;
+      calendarSlotMinTime = CALENDAR_FALLBACK_MIN_TIME;
+      calendarSlotMaxTime = CALENDAR_FALLBACK_MAX_TIME;
       return;
     }
+
+    const windows = settings.windows.filter((window) => {
+      const startMinutes = parseTimeToMinutes(window.ora_inizio);
+      const endMinutes = parseTimeToMinutes(window.ora_fine);
+      return startMinutes !== null && endMinutes !== null && startMinutes < endMinutes;
+    });
+
+    const allStartMinutes = windows
+      .map((window) => parseTimeToMinutes(window.ora_inizio))
+      .filter((value): value is number => value !== null);
+    const allEndMinutes = windows
+      .map((window) => parseTimeToMinutes(window.ora_fine))
+      .filter((value): value is number => value !== null);
+
+    if (allStartMinutes.length === 0 || allEndMinutes.length === 0) {
+      calendarBusinessHours = false;
+      calendarSlotMinTime = CALENDAR_FALLBACK_MIN_TIME;
+      calendarSlotMaxTime = CALENDAR_FALLBACK_MAX_TIME;
+      return;
+    }
+
+    calendarSlotDuration = getDurationStringFromMinutes(Number(settings.durataStandardVisitaMinuti));
+    calendarSlotMinTime = minutesToCalendarTime(Math.min(...allStartMinutes));
+    calendarSlotMaxTime = minutesToCalendarTime(Math.max(...allEndMinutes));
 
     const businessHours: NonNullable<CalendarOptions['businessHours']> = [];
 
@@ -1143,6 +1223,10 @@
     source: 'toolbar' | 'modal',
     searchNext = false
   ): Promise<void> {
+    if (!ensureVisitTimingSettingsConfigured()) {
+      return;
+    }
+
     if (!ambulatorioId || searchingFirstSlotMode) {
       return;
     }
@@ -1211,7 +1295,11 @@
   async function loadPatients(): Promise<void> {
     loadingPatients = true;
     try {
-      patients = await getAllPazienti();
+      if (!ambulatorioId) {
+        patients = [];
+        return;
+      }
+      patients = await getPazientiByAmbulatorio(ambulatorioId);
     } catch (error) {
       console.error('Errore caricamento pazienti:', error);
       toastStore.show('error', `Errore caricamento pazienti: ${getErrorMessage(error)}`);
@@ -1289,6 +1377,10 @@
   }
 
   function openCreateModal(startDate: Date, endDate?: Date): void {
+    if (!ensureVisitTimingSettingsConfigured()) {
+      return;
+    }
+
     const nextDate = formatDateOnly(startDate);
     const nextStartTime = formatTimeOnly(startDate);
     const nextEndTime = endDate ? formatTimeOnly(endDate) : getInitialEndTime(nextDate, nextStartTime);
@@ -1306,6 +1398,10 @@
   }
 
   function openEditModal(appointment: Appuntamento): void {
+    if (!ensureVisitTimingSettingsConfigured()) {
+      return;
+    }
+
     const normalizedStart = normalizeAppuntamentoDateTimeInput(appointment.data_ora_inizio);
     const normalizedEnd = normalizeAppuntamentoDateTimeInput(appointment.data_ora_fine);
     appointmentForm = {
@@ -1408,6 +1504,11 @@
   }
 
   async function handleEventDrop(arg: EventDropArg): Promise<void> {
+    if (!ensureVisitTimingSettingsConfigured()) {
+      arg.revert();
+      return;
+    }
+
     const appointmentId = Number.parseInt(arg.event.id, 10);
     const newStart = arg.event.start;
     const newEnd = arg.event.end;
@@ -1451,6 +1552,11 @@
   }
 
   async function handleEventResize(arg: any): Promise<void> {
+    if (!ensureVisitTimingSettingsConfigured()) {
+      arg.revert();
+      return;
+    }
+
     const appointmentId = Number.parseInt(arg.event.id, 10);
     const newStart = arg.event.start;
     const newEnd = arg.event.end;
@@ -1512,6 +1618,10 @@
   }
 
   async function saveAppointment(): Promise<void> {
+    if (!ensureVisitTimingSettingsConfigured()) {
+      return;
+    }
+
     const matchedPatientByLabel = findPatientByDisplayLabel(patientSearchTerm);
     const resolvedPatientId = appointmentForm.pazienteId || matchedPatientByLabel?.id || 0;
 

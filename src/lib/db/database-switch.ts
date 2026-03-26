@@ -6,6 +6,7 @@ import {
   getConfiguredDatabaseDirectory,
   getDatabasePathForDirectory,
   getDefaultDatabaseDirectory,
+  isApiDataProvider,
   getRuntimeDatabasePath,
   getRuntimeDatabaseUrl,
   setConfiguredDatabaseDirectory
@@ -71,6 +72,10 @@ async function persistDatabaseDirectory(nextDirectory: string): Promise<void> {
 export async function switchDatabaseDirectory(
   nextDirectoryInput: string
 ): Promise<SwitchDatabaseDirectoryResult> {
+  if (isApiDataProvider()) {
+    throw new Error('Cambio cartella database non disponibile con provider API');
+  }
+
   const nextDirectory = nextDirectoryInput.trim();
   if (!nextDirectory) {
     throw new Error('Inserisci un percorso valido per la cartella del database.');

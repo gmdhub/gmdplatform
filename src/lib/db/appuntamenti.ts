@@ -2,7 +2,19 @@ import {
   getAmbulatorioOperatingSettingsById,
   getAmbulatorioOperatingWindowsById
 } from './ambulatori';
+import { isApiDataProvider } from './config';
 import { initDatabase } from './schema';
+import {
+  createAppuntamentoManualeFromApi,
+  createFollowUpAppuntamentoFromApi,
+  deleteAppuntamentoFromApi,
+  getAppuntamentoByIdFromApi,
+  getAppuntamentoBySourceVisitaIdFromApi,
+  getAppuntamentiByRangeFromApi,
+  getDailyAppointmentCountsByRangeFromApi,
+  updateAppuntamentoFromApi,
+  updateAppuntamentoSourceVisitaIdFromApi
+} from '$lib/services/appuntamenti-service';
 import type {
   AmbulatorioOperatingSettings,
   Appuntamento,
@@ -19,14 +31,13 @@ import type {
   UpdateAppuntamentoInput
 } from './types';
 
-const DEFAULT_APPOINTMENT_DURATION_MINUTES = 15;
-const DEFAULT_SLOT_START_HOUR = 8;
-const DEFAULT_SLOT_END_HOUR = 20;
 const FIRST_SLOT_SEARCH_HORIZON_DAYS = 180;
 const URGENT_SLOT_STEP_MINUTES = 5;
 const QUARTER_HOUR_STEP_MINUTES = 15;
 const MIN_ALLOWED_VISIT_DURATION_MINUTES = 10;
 export const APPOINTAMENTO_CONFIRMATION_REQUIRED_PREFIX = 'APPUNTAMENTO_CONFIRMATION_REQUIRED:';
+export const VISIT_SETTINGS_REQUIRED_MESSAGE =
+  'Devi prima configurare la durata delle visite ambulatoriali nelle impostazioni.';
 
 function normalizeIntegerForWrite(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined) {
@@ -208,18 +219,18 @@ function normalizeMinVisitDuration(value: number): number {
 
 function normalizeStandardVisitDuration(value: number, minDurationMinutes: number): number {
   if (!Number.isInteger(value) || value < MIN_ALLOWED_VISIT_DURATION_MINUTES) {
-    return Math.max(DEFAULT_APPOINTMENT_DURATION_MINUTES, minDurationMinutes);
+    throw new Error(
+      `Durata standard visita non valida: ${value}. Minimo consentito ${MIN_ALLOWED_VISIT_DURATION_MINUTES} minuti.`
+    );
   }
 
-  return Math.max(value, minDurationMinutes);
-}
+  if (value < minDurationMinutes) {
+    throw new Error(
+      `Durata standard visita non valida: ${value}. Deve essere >= durata minima (${minDurationMinutes}).`
+    );
+  }
 
-function getGlobalStartBoundaryMinutes(): number {
-  return DEFAULT_SLOT_START_HOUR * 60;
-}
-
-function getGlobalEndBoundaryMinutes(): number {
-  return DEFAULT_SLOT_END_HOUR * 60;
+  return value;
 }
 
 function roundUpDateTimeToStep(dateTime: string, stepMinutes: number): string {
@@ -252,13 +263,11 @@ function getSearchHorizonDays(horizonDays?: number): number {
   return Math.max(1, Math.floor(horizonDays as number));
 }
 
-function getDayWindowsWithinGlobalBounds(params: {
+function getDayWindowsFromSettings(params: {
   day: string;
   weekday: number;
   windows: Array<{ weekday: number; ora_inizio: string; ora_fine: string; max_pazienti_giorno?: number }>;
 }): Array<{ startDateTime: string; endDateTime: string }> {
-  const globalStartMinutes = getGlobalStartBoundaryMinutes();
-  const globalEndMinutes = getGlobalEndBoundaryMinutes();
   const result: Array<{ startDateTime: string; endDateTime: string }> = [];
 
   for (const window of params.windows) {
@@ -268,19 +277,29 @@ function getDayWindowsWithinGlobalBounds(params: {
 
     const windowStartMinutes = timeToMinutes(window.ora_inizio);
     const windowEndMinutes = timeToMinutes(window.ora_fine);
-    const boundedStartMinutes = Math.max(windowStartMinutes, globalStartMinutes);
-    const boundedEndMinutes = Math.min(windowEndMinutes, globalEndMinutes);
-    if (boundedStartMinutes >= boundedEndMinutes) {
+    if (windowStartMinutes >= windowEndMinutes) {
       continue;
     }
 
     result.push({
-      startDateTime: `${params.day}T${minutesToTime(boundedStartMinutes)}`,
-      endDateTime: `${params.day}T${minutesToTime(boundedEndMinutes)}`
+      startDateTime: `${params.day}T${minutesToTime(windowStartMinutes)}`,
+      endDateTime: `${params.day}T${minutesToTime(windowEndMinutes)}`
     });
   }
 
   return result.sort((left, right) => left.startDateTime.localeCompare(right.startDateTime));
+}
+
+function hasConfiguredOperatingWindows(
+  windows: Array<{ weekday: number; ora_inizio: string; ora_fine: string; max_pazienti_giorno?: number }>
+): boolean {
+  return windows.some((window) => {
+    try {
+      return timeToMinutes(window.ora_inizio) < timeToMinutes(window.ora_fine);
+    } catch {
+      return false;
+    }
+  });
 }
 
 function getDailyCapacityLimitForWeekday(
@@ -325,11 +344,22 @@ async function resolveAmbulatorioDurationSettings(
   standardDurationMinutes: number;
 }> {
   const settings = preloadedSettings ?? (await getAmbulatorioOperatingSettingsById(ambulatorioId));
-  const minDurationMinutes = normalizeMinVisitDuration(settings.durataMinimaVisitaMinuti);
-  const standardDurationMinutes = normalizeStandardVisitDuration(
-    settings.durataStandardVisitaMinuti,
-    minDurationMinutes
-  );
+  let minDurationMinutes: number;
+  let standardDurationMinutes: number;
+
+  try {
+    minDurationMinutes = normalizeMinVisitDuration(Number(settings.durataMinimaVisitaMinuti));
+    standardDurationMinutes = normalizeStandardVisitDuration(
+      Number(settings.durataStandardVisitaMinuti),
+      minDurationMinutes
+    );
+  } catch {
+    throw new Error(VISIT_SETTINGS_REQUIRED_MESSAGE);
+  }
+
+  if (!hasConfiguredOperatingWindows(settings.windows)) {
+    throw new Error(VISIT_SETTINGS_REQUIRED_MESSAGE);
+  }
 
   return {
     settings,
@@ -395,6 +425,33 @@ async function getOverlappingAppointments(params: {
   endDateTime: string;
   excludeAppuntamentoId?: number;
 }): Promise<Appuntamento[]> {
+  if (isApiDataProvider()) {
+    const appointments = await getAppuntamentiByRangeFromApi({
+      ambulatorioId: params.ambulatorioId,
+      rangeStart: params.startDateTime,
+      rangeEndExclusive: params.endDateTime
+    });
+
+    return appointments
+      .filter((appointment) => {
+        if (params.excludeAppuntamentoId !== undefined && appointment.id === params.excludeAppuntamentoId) {
+          return false;
+        }
+
+        const start = normalizeDateTime(appointment.data_ora_inizio);
+        const end = normalizeDateTime(appointment.data_ora_fine);
+        return start < params.endDateTime && end > params.startDateTime;
+      })
+      .sort((left, right) => {
+        const leftStart = normalizeDateTime(left.data_ora_inizio);
+        const rightStart = normalizeDateTime(right.data_ora_inizio);
+        if (leftStart !== rightStart) {
+          return leftStart.localeCompare(rightStart);
+        }
+        return normalizeDateTime(left.data_ora_fine).localeCompare(normalizeDateTime(right.data_ora_fine));
+      });
+  }
+
   const db = await initDatabase();
   const queryParams: unknown[] = [
     normalizeIntegerForWrite(params.ambulatorioId),
@@ -431,6 +488,22 @@ async function getDailyAppointmentCount(params: {
   day: string;
   excludeAppuntamentoId?: number;
 }): Promise<number> {
+  if (isApiDataProvider()) {
+    const bounds = getDayBounds(params.day);
+    const appointments = await getAppuntamentiByRangeFromApi({
+      ambulatorioId: params.ambulatorioId,
+      rangeStart: bounds.start,
+      rangeEndExclusive: bounds.endExclusive
+    });
+
+    return appointments.filter((appointment) => {
+      if (params.excludeAppuntamentoId !== undefined && appointment.id === params.excludeAppuntamentoId) {
+        return false;
+      }
+      return true;
+    }).length;
+  }
+
   const db = await initDatabase();
   const bounds = getDayBounds(params.day);
   const queryParams: unknown[] = [
@@ -775,6 +848,10 @@ async function applyExistingAppointmentAdjustments(params: {
 }
 
 export async function getAppuntamentoById(id: number): Promise<Appuntamento | null> {
+  if (isApiDataProvider()) {
+    return getAppuntamentoByIdFromApi(id);
+  }
+
   const db = await initDatabase();
   const rows = await db.select<Appuntamento[]>(
     `SELECT
@@ -794,6 +871,10 @@ export async function getAppuntamentoById(id: number): Promise<Appuntamento | nu
 }
 
 export async function getAppuntamentoBySourceVisitaId(visitaId: number): Promise<Appuntamento | null> {
+  if (isApiDataProvider()) {
+    return getAppuntamentoBySourceVisitaIdFromApi(visitaId);
+  }
+
   const db = await initDatabase();
   const rows = await db.select<Appuntamento[]>(
     `SELECT
@@ -818,6 +899,10 @@ export async function getAppuntamentiByRange(params: {
   rangeStart: string;
   rangeEndExclusive: string;
 }): Promise<Appuntamento[]> {
+  if (isApiDataProvider()) {
+    return getAppuntamentiByRangeFromApi(params);
+  }
+
   const db = await initDatabase();
 
   return db.select<Appuntamento[]>(
@@ -847,6 +932,10 @@ export async function getDailyAppointmentCountsByRange(params: {
   rangeStart: string;
   rangeEndExclusive: string;
 }): Promise<DailyAppointmentCount[]> {
+  if (isApiDataProvider()) {
+    return getDailyAppointmentCountsByRangeFromApi(params);
+  }
+
   const db = await initDatabase();
 
   return db.select<DailyAppointmentCount[]>(
@@ -1049,6 +1138,30 @@ export async function createAppuntamentoManuale(
     });
   }
 
+  if (isApiDataProvider()) {
+    for (const update of plan.updatesToApply) {
+      await updateAppuntamentoFromApi({
+        id: update.id,
+        data_ora_inizio: update.startDateTime,
+        data_ora_fine: update.endDateTime
+      });
+    }
+
+    const appointmentId = await createAppuntamentoManualeFromApi({
+      ambulatorio_id: input.ambulatorio_id,
+      paziente_id: input.paziente_id,
+      data_ora_inizio: plan.finalStartDateTime,
+      data_ora_fine: plan.finalEndDateTime,
+      motivo: input.motivo
+    });
+
+    return {
+      saved: true,
+      appuntamentoId: appointmentId,
+      appliedAdjustments: plan.adjustments
+    };
+  }
+
   const db = await initDatabase();
   const transactionStarted = await beginWriteTransactionIfSupported(db);
 
@@ -1134,6 +1247,30 @@ export async function updateAppuntamento(
     });
   }
 
+  if (isApiDataProvider()) {
+    for (const update of plan.updatesToApply) {
+      await updateAppuntamentoFromApi({
+        id: update.id,
+        data_ora_inizio: update.startDateTime,
+        data_ora_fine: update.endDateTime
+      });
+    }
+
+    await updateAppuntamentoFromApi({
+      id: input.id,
+      paziente_id: nextPazienteId ?? undefined,
+      data_ora_inizio: plan.finalStartDateTime,
+      data_ora_fine: plan.finalEndDateTime,
+      motivo: nextMotivo ?? undefined
+    });
+
+    return {
+      saved: true,
+      appuntamentoId: existing.id,
+      appliedAdjustments: plan.adjustments
+    };
+  }
+
   const db = await initDatabase();
   const transactionStarted = await beginWriteTransactionIfSupported(db);
 
@@ -1177,6 +1314,11 @@ export async function updateAppuntamento(
 }
 
 export async function deleteAppuntamento(id: number): Promise<void> {
+  if (isApiDataProvider()) {
+    await deleteAppuntamentoFromApi(id);
+    return;
+  }
+
   const db = await initDatabase();
   await db.execute('DELETE FROM appuntamenti WHERE id = ?', [normalizeIntegerForWrite(id)]);
 }
@@ -1185,6 +1327,11 @@ export async function updateAppuntamentoSourceVisitaId(params: {
   appuntamentoId: number;
   sourceVisitaId: number | null;
 }): Promise<void> {
+  if (isApiDataProvider()) {
+    await updateAppuntamentoSourceVisitaIdFromApi(params);
+    return;
+  }
+
   const db = await initDatabase();
   await db.execute(
     `UPDATE appuntamenti
@@ -1236,6 +1383,31 @@ export async function createFollowUpAppuntamentoFromVisita(params: {
       requiresOverlapAdjustmentConfirmation: plan.requiresOverlapAdjustmentConfirmation,
       adjustments: plan.adjustments
     });
+  }
+
+  if (isApiDataProvider()) {
+    for (const update of plan.updatesToApply) {
+      await updateAppuntamentoFromApi({
+        id: update.id,
+        data_ora_inizio: update.startDateTime,
+        data_ora_fine: update.endDateTime
+      });
+    }
+
+    const appointmentId = await createFollowUpAppuntamentoFromApi({
+      ambulatorio_id: params.ambulatorioId,
+      paziente_id: params.pazienteId,
+      data_ora_inizio: plan.finalStartDateTime,
+      data_ora_fine: plan.finalEndDateTime,
+      motivo: params.motivo,
+      source_visita_id: params.visitaId
+    });
+
+    return {
+      saved: true,
+      appuntamentoId: appointmentId,
+      appliedAdjustments: plan.adjustments
+    };
   }
 
   const db = await initDatabase();
@@ -1336,7 +1508,7 @@ async function findFirstSlot(params: FindFirstSlotParams & { mode: 'urgent' | 'q
       continue;
     }
 
-    const dayWindows = getDayWindowsWithinGlobalBounds({
+    const dayWindows = getDayWindowsFromSettings({
       day,
       weekday,
       windows: settings.windows
@@ -1443,23 +1615,53 @@ export function normalizeAppuntamentoDateTimeInput(value: string): string {
   return normalizeDateTime(value);
 }
 
-export function getDefaultSlotConfiguration(): {
+export function getDefaultSlotConfiguration(settings: AmbulatorioOperatingSettings): {
   startHour: number;
   endHour: number;
   durationMinutes: number;
 } {
+  const minDurationMinutes = normalizeMinVisitDuration(Number(settings.durataMinimaVisitaMinuti));
+  const standardDurationMinutes = normalizeStandardVisitDuration(
+    Number(settings.durataStandardVisitaMinuti),
+    minDurationMinutes
+  );
+  const minuteBounds = settings.windows
+    .map((window) => {
+      try {
+        const startMinutes = timeToMinutes(window.ora_inizio);
+        const endMinutes = timeToMinutes(window.ora_fine);
+        if (startMinutes >= endMinutes) {
+          return null;
+        }
+        return { startMinutes, endMinutes };
+      } catch {
+        return null;
+      }
+    })
+    .filter((entry): entry is { startMinutes: number; endMinutes: number } => entry !== null);
+
+  if (!hasConfiguredOperatingWindows(settings.windows) || minuteBounds.length === 0) {
+    throw new Error(VISIT_SETTINGS_REQUIRED_MESSAGE);
+  }
+
+  const startMinutes = Math.min(...minuteBounds.map((entry) => entry.startMinutes));
+  const endMinutes = Math.max(...minuteBounds.map((entry) => entry.endMinutes));
+  const startHour = Math.floor(startMinutes / 60);
+  const endHour = Math.ceil(endMinutes / 60);
+
   return {
-    startHour: DEFAULT_SLOT_START_HOUR,
-    endHour: DEFAULT_SLOT_END_HOUR,
-    durationMinutes: DEFAULT_APPOINTMENT_DURATION_MINUTES
+    startHour,
+    endHour,
+    durationMinutes: standardDurationMinutes
   };
 }
 
 export function getAppuntamentoEndDateTime(
   startDateTime: string,
-  durationMinutes = DEFAULT_APPOINTMENT_DURATION_MINUTES
+  durationMinutes: number
 ): string {
-  return addMinutes(startDateTime, durationMinutes);
+  const normalizedDuration = normalizeMinVisitDuration(Number(durationMinutes));
+  return addMinutes(startDateTime, normalizedDuration);
 }
 
 export function parseFollowUpScheduling(raw: string | null | undefined): {

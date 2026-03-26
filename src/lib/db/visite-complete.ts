@@ -5,6 +5,7 @@ import type {
   UpdateFattoriRischioCVInput,
   UpdateVisitaInput
 } from './types';
+import { isApiDataProvider } from './config';
 import {
   createFattoriRischioCV,
   getFattoriRischioCVByVisitaId,
@@ -25,6 +26,11 @@ import {
   getVisitaPreviousVersionLockedMessage,
   isVisitaWithinEditDeleteWindow
 } from '../utils/visite-permissions';
+import {
+  createVisitaCompletaFromApi,
+  createVisitaVersioneCompletaFromApi,
+  updateVisitaCompletaFromApi
+} from '$lib/services/visite-complete-service';
 
 type FattoriRischioPayload = Partial<Omit<CreateFattoriRischioCVInput, 'visita_id'>>;
 
@@ -84,6 +90,13 @@ export async function createVisitaCompleta(input: {
   fattoriRischioCV: Omit<CreateFattoriRischioCVInput, 'visita_id'>;
   followUpWriteOptions?: AppuntamentoWriteOptions;
 }): Promise<number> {
+  if (isApiDataProvider()) {
+    return createVisitaCompletaFromApi({
+      visita: input.visita,
+      fattoriRischioCV: input.fattoriRischioCV
+    });
+  }
+
   const followUpScheduling = parseFollowUpScheduling(input.visita.pianificazione_followup);
   if (followUpScheduling) {
     await ensureFollowUpCanBeScheduled({
@@ -125,6 +138,14 @@ export async function updateVisitaCompleta(input: {
   fattoriRischioCV: Omit<UpdateFattoriRischioCVInput, 'id'>;
   followUpWriteOptions?: AppuntamentoWriteOptions;
 }): Promise<void> {
+  if (isApiDataProvider()) {
+    await updateVisitaCompletaFromApi({
+      visita: input.visita,
+      fattoriRischioCV: input.fattoriRischioCV
+    });
+    return;
+  }
+
   const visitaId = input.fattoriRischioCV.visita_id ?? input.visita.id;
   if (!visitaId) {
     throw new Error('visita_id richiesto per aggiornare i fattori di rischio');
@@ -219,6 +240,14 @@ export async function createVisitaVersioneCompleta(input: {
   fattoriRischioCV: Omit<CreateFattoriRischioCVInput, 'visita_id'>;
   followUpWriteOptions?: AppuntamentoWriteOptions;
 }): Promise<number> {
+  if (isApiDataProvider()) {
+    return createVisitaVersioneCompletaFromApi({
+      sourceVisitaId: input.sourceVisitaId,
+      visita: input.visita,
+      fattoriRischioCV: input.fattoriRischioCV
+    });
+  }
+
   const sourceVisita = await getVisitaById(input.sourceVisitaId);
   if (!sourceVisita) {
     throw new Error(`Visita ${input.sourceVisitaId} non trovata`);

@@ -87,6 +87,7 @@ jobs:
       contents: write
     env:
       CARGO_TERM_COLOR: always
+      VITE_APP_ENV: production
 
     steps:
       - name: Checkout
@@ -103,6 +104,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate frontend env (production only)
+        shell: bash
+        run: |
+          if [[ "${VITE_APP_ENV}" == "development" ]]; then
+            echo "Build bloccata: VITE_APP_ENV=development non consentito per release."
+            exit 1
+          fi
 
       - name: Build Tauri (Windows MSI + NSIS)
         run: npm run tauri build -- --bundles msi,nsis
@@ -161,6 +170,7 @@ jobs:
       contents: write
     env:
       CARGO_TERM_COLOR: always
+      VITE_APP_ENV: production
 
     steps:
       - name: Checkout
@@ -177,6 +187,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate frontend env (production only)
+        shell: bash
+        run: |
+          if [[ "${VITE_APP_ENV}" == "development" ]]; then
+            echo "Build bloccata: VITE_APP_ENV=development non consentito per release."
+            exit 1
+          fi
 
       - name: Build Tauri (macOS APP + DMG)
         run: npm run tauri build -- --bundles app,dmg

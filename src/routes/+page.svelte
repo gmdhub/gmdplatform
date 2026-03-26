@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { authStore } from '$lib/stores/auth';
   import { authenticateUser } from '$lib/db/auth';
+  import { getScopedStorageKey } from '$lib/db/config';
   import Button from '$lib/components/Button.svelte';
   import Input from '$lib/components/Input.svelte';
   import Icon from '$lib/components/Icon.svelte';
@@ -13,6 +14,7 @@
   let loading = false;
   let rememberMe = false;
   let showPassword = false;
+  const REMEMBER_USERNAME_KEY = getScopedStorageKey('gmd_saved_username');
 
   function getErrorMessage(err: unknown): string {
     if (err instanceof Error && err.message) {
@@ -45,14 +47,10 @@
   onMount(() => {
     // Carica credenziali salvate se presenti
     if (typeof window !== 'undefined') {
-      const savedUsername = localStorage.getItem('gmd_saved_username');
-      const savedPassword = localStorage.getItem('gmd_saved_password');
+      const savedUsername = localStorage.getItem(REMEMBER_USERNAME_KEY);
       if (savedUsername) {
         username = savedUsername;
         rememberMe = true;
-      }
-      if (savedPassword) {
-        password = savedPassword;
       }
     }
 
@@ -91,11 +89,9 @@
         // Salva credenziali se "Ricordami" è attivo
         if (typeof window !== 'undefined') {
           if (rememberMe) {
-            localStorage.setItem('gmd_saved_username', username);
-            localStorage.setItem('gmd_saved_password', password);
+            localStorage.setItem(REMEMBER_USERNAME_KEY, username);
           } else {
-            localStorage.removeItem('gmd_saved_username');
-            localStorage.removeItem('gmd_saved_password');
+            localStorage.removeItem(REMEMBER_USERNAME_KEY);
           }
         }
 

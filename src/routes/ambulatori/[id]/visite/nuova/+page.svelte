@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
+  import { invoke } from '@tauri-apps/api/core';
   import { authStore } from '$lib/stores/auth';
   import { sidebarCollapsedStore } from '$lib/stores/sidebar';
   import { toastStore } from '$lib/stores/toast';
@@ -235,6 +236,7 @@
   let currentStep: VisitFlowStep = 'select_patient';
   let searchTerm = '';
   let showNewPatientModal = false;
+  let showPatientDetailsModal = false;
   let filteredPazienti: Paziente[] = [];
   let loading = false;
   let savingWithReport = false;
@@ -742,6 +744,15 @@
     showNewPatientModal = true;
   }
 
+  function openPatientDetailsModal() {
+    if (!selectedPaziente) {
+      toastStore.show('error', 'Nessun paziente selezionato');
+      return;
+    }
+
+    showPatientDetailsModal = true;
+  }
+
   async function handleNewPatientSubmit(event: CustomEvent) {
     const newPaziente = event.detail;
     // Ricarica la lista dei pazienti
@@ -753,6 +764,25 @@
     toastStore.show('success', 'Paziente creato con successo!');
     // Chiudi il modal
     showNewPatientModal = false;
+  }
+
+  function handlePatientDetailsSubmit(event: CustomEvent<Paziente>) {
+    const updatedPaziente = event.detail;
+    if (!updatedPaziente || !Number.isInteger(updatedPaziente.id)) {
+      toastStore.show('error', 'Dati anagrafici aggiornati non validi');
+      return;
+    }
+
+    pazienti = pazienti.map((paziente) =>
+      paziente.id === updatedPaziente.id ? { ...paziente, ...updatedPaziente } : paziente
+    );
+
+    if (selectedPaziente?.id === updatedPaziente.id) {
+      selectedPaziente = { ...selectedPaziente, ...updatedPaziente };
+    }
+
+    showPatientDetailsModal = false;
+    toastStore.show('success', 'Anagrafica paziente aggiornata con successo');
   }
 
   function calculateAge(dataNascita: string): number {
@@ -883,6 +913,15 @@
   }
 
   async function openReportInWord(reportPath: string): Promise<void> {
+    const attempts: string[] = [];
+
+    try {
+      await invoke('open_file_in_word', { filePath: reportPath });
+      return;
+    } catch (error) {
+      attempts.push(`tauri_command=${getErrorMessage(error)}`);
+    }
+
     const { openPath } = await import('@tauri-apps/plugin-opener');
 
     // Try explicit Word targets first, then fallback to the OS default app for DOCX.
@@ -892,12 +931,19 @@
       try {
         await openPath(reportPath, opener);
         return;
-      } catch {
-        // Ignore and try next candidate.
+      } catch (error) {
+        attempts.push(`openPath(${opener})=${getErrorMessage(error)}`);
       }
     }
 
-    await openPath(reportPath);
+    try {
+      await openPath(reportPath);
+      return;
+    } catch (error) {
+      attempts.push(`openPath(default)=${getErrorMessage(error)}`);
+    }
+
+    throw new Error(`Impossibile aprire il referto DOCX. ${attempts.join(' | ')}`);
   }
 
   async function submitVisit(generateReport = false) {
@@ -1160,18 +1206,26 @@
   });
 </script>
 
-<div class="nuova-visita-page">
+<div class="nuova-visita-page" class:patient-selection-mode={currentStep === 'select_patient'}>
   <PageHeader
     title={isEditMode ? 'Modifica Visita' : 'Nuova Visita'}
     subtitle={currentStep === 'compile_visit'
       ? (isEditMode
           ? 'Modifica i dati della visita selezionata'
           : 'Inserisci i dati della nuova visita medica')
-      : 'Seleziona o crea un paziente per iniziare la visita'}
+      : 'Seleziona un paziente esistente dalla lista oppure usa il pulsante in alto per crearne uno nuovo.'}
     showLogo={$sidebarCollapsedStore}
     onBack={handleBack}
   >
     <div slot="actions">
+      {#if currentStep === 'compile_visit' && selectedPaziente}
+        <button type="button" class="btn-icon-text" on:click={openPatientDetailsModal}>
+          <span class="icon">
+            <Icon name="user-pen" size={24} />
+          </span>
+          <span class="text">Dettagli Paziente</span>
+        </button>
+      {/if}
       {#if !isEditMode}
         <button type="button" class="btn-icon-text" on:click={openNewPatientModal}>
           <span class="icon">
@@ -1182,7 +1236,7 @@
         {#if currentStep === 'compile_visit'}
           <button type="button" class="btn-icon-text" on:click={handleChangePaziente}>
             <span class="icon">
-              <Icon name="user" size={24} />
+              <Icon name="user-search" size={24} />
             </span>
             <span class="text">Cambia Paziente</span>
           </button>
@@ -1193,68 +1247,60 @@
 
   {#if currentStep === 'select_patient'}
     <section class="patient-selection-step">
-      <Card>
-        <h2 class="section-title">Scelta Paziente</h2>
-        <p class="patient-selection-description">
-          Seleziona un paziente esistente dalla lista oppure usa il pulsante in alto per crearne uno
-          nuovo.
-        </p>
+      <div class="search-box patient-selection-search">
+        <input
+          type="text"
+          bind:value={searchTerm}
+          placeholder="Cerca per nome, cognome o codice fiscale..."
+        />
+      </div>
 
-        <div class="search-box patient-selection-search">
-          <input
-            type="text"
-            bind:value={searchTerm}
-            placeholder="Cerca per nome, cognome o codice fiscale..."
-          />
-        </div>
-
-        <div class="patient-table-container patient-selection-table">
-          {#if filteredPazienti.length === 0}
-            <div class="empty-state">Nessun paziente trovato</div>
-          {:else}
-            <table class="patient-table">
-              <thead>
-                <tr>
-                  <th>Cognome</th>
-                  <th>Nome</th>
-                  <th>Codice Fiscale</th>
-                  <th>Data Nascita</th>
-                  <th>Sesso</th>
+      <div class="patient-table-container patient-selection-table">
+        {#if filteredPazienti.length === 0}
+          <div class="empty-state">Nessun paziente trovato</div>
+        {:else}
+          <table class="patient-table">
+            <thead>
+              <tr>
+                <th>Cognome</th>
+                <th>Nome</th>
+                <th>Codice Fiscale</th>
+                <th>Data Nascita</th>
+                <th>Sesso</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each filteredPazienti as paziente}
+                <tr
+                  class="patient-row"
+                  class:selected={selectedPaziente?.id === paziente.id}
+                  on:click={() => handleSelectPazienteForVisit(paziente)}
+                >
+                  <td><strong>{paziente.cognome}</strong></td>
+                  <td>{paziente.nome}</td>
+                  <td class="text-muted">{paziente.codice_fiscale}</td>
+                  <td>{new Date(paziente.data_nascita).toLocaleDateString('it-IT')}</td>
+                  <td>{paziente.sesso}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {#each filteredPazienti as paziente}
-                  <tr
-                    class="patient-row"
-                    class:selected={selectedPaziente?.id === paziente.id}
-                    on:click={() => handleSelectPazienteForVisit(paziente)}
-                  >
-                    <td><strong>{paziente.cognome}</strong></td>
-                    <td>{paziente.nome}</td>
-                    <td class="text-muted">{paziente.codice_fiscale}</td>
-                    <td>{new Date(paziente.data_nascita).toLocaleDateString('it-IT')}</td>
-                    <td>{paziente.sesso}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          {/if}
-        </div>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      </div>
 
-        <div class="patient-selection-actions">
-          <button type="button" class="btn-secondary" on:click={handleBack}>
-            Annulla
-          </button>
-          <button
-            type="button"
-            class="btn-primary"
-            disabled={!selectedPaziente}
-            on:click={handleContinueToVisitForm}
-          >
-            Continua
-          </button>
-        </div>
-      </Card>
+      <div class="patient-selection-actions">
+        <button type="button" class="btn-secondary" on:click={handleBack}>
+          Annulla
+        </button>
+        <button
+          type="button"
+          class="btn-primary"
+          disabled={!selectedPaziente}
+          on:click={handleContinueToVisitForm}
+        >
+          Continua
+        </button>
+      </div>
     </section>
   {:else if selectedPaziente}
     <div class="page-content">
@@ -1542,11 +1588,31 @@
   />
 {/if}
 
+{#if selectedPaziente}
+  <PazienteFormModal
+    bind:isOpen={showPatientDetailsModal}
+    paziente={selectedPaziente}
+    {ambulatorioId}
+    modalTitle="Dettaglio anagrafico"
+    submitButtonLabel="Modifica anagrafica"
+    requireChangesForSubmit={true}
+    on:submit={handlePatientDetailsSubmit}
+    on:close={() => (showPatientDetailsModal = false)}
+  />
+{/if}
+
 <style>
   .nuova-visita-page {
     padding: var(--space-6);
     max-width: 1200px;
     margin: 0 auto;
+  }
+
+  .nuova-visita-page.patient-selection-mode {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .page-content {
@@ -1565,10 +1631,11 @@
     padding-top: var(--space-2);
   }
 
-  .patient-selection-description {
-    margin: 0 0 var(--space-4);
-    font-size: var(--text-base);
-    color: var(--color-text-secondary);
+  .nuova-visita-page.patient-selection-mode .patient-selection-step {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
   }
 
   .patient-selection-search {
@@ -1579,6 +1646,12 @@
     max-height: 440px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
+  }
+
+  .nuova-visita-page.patient-selection-mode .patient-selection-table {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
   }
 
   .patient-selection-actions {
@@ -1674,6 +1747,12 @@
 
   .patient-table-container {
     max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .nuova-visita-page.patient-selection-mode .patient-table-container {
+    height: 100%;
+    max-height: none;
     overflow-y: auto;
   }
 

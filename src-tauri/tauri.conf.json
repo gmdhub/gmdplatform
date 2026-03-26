@@ -1,10 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "GMD Medical Platform",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.gmdmedical.platform",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "node scripts/dev/tauri-dev-with-api.mjs",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../build"
@@ -12,12 +12,14 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "GMD Medical Platform",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
         "minHeight": 768,
-        "titleBarStyle": "Visible"
+        "titleBarStyle": "Visible",
+        "visible": false
       }
     ],
     "security": {
@@ -44,6 +46,12 @@
               "allow": [
                 {
                   "path": "**"
+                },
+                {
+                  "path": "**/.*"
+                },
+                {
+                  "path": "**/.*/**"
                 }
               ]
             },

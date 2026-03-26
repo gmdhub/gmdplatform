@@ -13,6 +13,7 @@ export type IconName =
   | 'eye'
   | 'eye-off'
   | 'file-plus'
+  | 'file-user'
   | 'file-text'
   | 'flask'
   | 'folder-open'
@@ -37,5 +38,7 @@ export type IconName =
   | 'trash'
   | 'underline'
   | 'user'
+  | 'user-pen'
   | 'user-plus'
+  | 'user-search'
   | 'users';

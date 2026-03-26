@@ -6,7 +6,7 @@
   import { authStore } from '$lib/stores/auth';
   import { sidebarCollapsedStore } from '$lib/stores/sidebar';
   import { toastStore } from '$lib/stores/toast';
-  import { getAllPazienti } from '$lib/db/pazienti';
+  import { getPazientiByAmbulatorio } from '$lib/db/pazienti';
   import { getFattoriRischioCVByVisitaIds } from '$lib/db/fattori-rischio-cv';
   import { getCurrentVisiteByAmbulatorio } from '$lib/db/visite';
   import type { FattoriRischioCV, Visita } from '$lib/db/types';
@@ -189,14 +189,10 @@
         throw new Error('ID ambulatorio non valido');
       }
 
-      const [allPazienti, visite] = await Promise.all([
-        getAllPazienti(),
+      const [pazientiAmbulatorio, visite] = await Promise.all([
+        getPazientiByAmbulatorio(parsedAmbulatorioId),
         getCurrentVisiteByAmbulatorio(parsedAmbulatorioId)
       ]);
-
-      const pazientiAmbulatorio = allPazienti.filter(
-        (paziente) => paziente.ambulatorio_id === parsedAmbulatorioId
-      );
       totalPazienti = pazientiAmbulatorio.length;
 
       const latestVisite = getLatestVisiteByPaziente(visite);
@@ -460,7 +456,6 @@
               <div class="stats-card-title">Pazienti con Inibitori PCSK9</div>
               <div class="stats-detail-top">
                 <div class="stats-kpi-value">{dashboardStats.pcsk9Stats.total}</div>
-                <div class="stats-detail-subtitle">Totali</div>
               </div>
               <div class="stats-list">
                 <div class="stats-list-row">
@@ -594,11 +589,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-  }
-
-  .stats-detail-subtitle {
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
   }
 
   .stats-list {

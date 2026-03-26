@@ -1,5 +1,14 @@
 import { insertReturningId } from './client';
+import { isApiDataProvider } from './config';
 import { initDatabase } from './schema';
+import {
+  createFattoriRischioCVFromApi,
+  deleteFattoriRischioCVByVisitaIdFromApi,
+  deleteFattoriRischioCVFromApi,
+  getFattoriRischioCVByVisitaIdFromApi,
+  getFattoriRischioCVByVisitaIdsFromApi,
+  updateFattoriRischioCVFromApi
+} from '$lib/services/fattori-rischio-cv-service';
 import type {
   CreateFattoriRischioCVInput,
   FattoriRischioCV,
@@ -83,6 +92,10 @@ function pushField(fields: string[], values: unknown[], column: string, value: u
 export async function createFattoriRischioCV(
   data: CreateFattoriRischioCVInput
 ): Promise<number> {
+  if (isApiDataProvider()) {
+    return createFattoriRischioCVFromApi(data);
+  }
+
   await initDatabase();
 
   return insertReturningId(
@@ -118,6 +131,10 @@ export async function createFattoriRischioCV(
 export async function getFattoriRischioCVByVisitaId(
   visitaId: number
 ): Promise<FattoriRischioCV | null> {
+  if (isApiDataProvider()) {
+    return getFattoriRischioCVByVisitaIdFromApi(visitaId);
+  }
+
   const db = await initDatabase();
 
   const rows = await db.select<Array<
@@ -167,6 +184,10 @@ export async function getFattoriRischioCVByVisitaId(
 }
 
 export async function getFattoriRischioCVByVisitaIds(visitaIds: number[]): Promise<FattoriRischioCV[]> {
+  if (isApiDataProvider()) {
+    return getFattoriRischioCVByVisitaIdsFromApi(visitaIds);
+  }
+
   if (visitaIds.length === 0) {
     return [];
   }
@@ -225,6 +246,11 @@ export async function getFattoriRischioCVByVisitaIds(visitaIds: number[]): Promi
 export async function updateFattoriRischioCV(
   data: UpdateFattoriRischioCVInput
 ): Promise<void> {
+  if (isApiDataProvider()) {
+    await updateFattoriRischioCVFromApi(data);
+    return;
+  }
+
   const db = await initDatabase();
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -279,6 +305,11 @@ export async function updateFattoriRischioCV(
 }
 
 export async function deleteFattoriRischioCV(id: number): Promise<void> {
+  if (isApiDataProvider()) {
+    await deleteFattoriRischioCVFromApi(id);
+    return;
+  }
+
   const db = await initDatabase();
   await db.execute('DELETE FROM fattori_rischio_cv WHERE id = ?', [
     normalizeIntegerForWrite(id)
@@ -286,6 +317,11 @@ export async function deleteFattoriRischioCV(id: number): Promise<void> {
 }
 
 export async function deleteFattoriRischioCVByVisitaId(visitaId: number): Promise<void> {
+  if (isApiDataProvider()) {
+    await deleteFattoriRischioCVByVisitaIdFromApi(visitaId);
+    return;
+  }
+
   const db = await initDatabase();
   await db.execute('DELETE FROM fattori_rischio_cv WHERE visita_id = ?', [
     normalizeIntegerForWrite(visitaId)

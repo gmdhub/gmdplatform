@@ -3,10 +3,25 @@
   import { authStore } from '$lib/stores/auth';
   import { ambulatorioStore } from '$lib/stores/ambulatorio';
   import { initDatabase } from '$lib/db/schema';
+  import { ensureStorageIsolationForEnvironment } from '$lib/db/config';
   import '../app.css';
 
-  onMount(async () => {
-    // Inizializza database
+  async function notifyNativeAppReady(): Promise<void> {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+      return;
+    }
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('set_app_ready');
+    } catch (error) {
+      console.warn('Impossibile notificare splash nativa:', error);
+    }
+  }
+
+  async function bootstrapApp(): Promise<void> {
+    ensureStorageIsolationForEnvironment();
+
     try {
       await initDatabase();
       console.log('Database inizializzato con successo');
@@ -14,9 +29,23 @@
       console.error('Errore inizializzazione database:', error);
     }
 
-    // Ripristina sessione utente
-    authStore.restore();
-    ambulatorioStore.restore();
+    try {
+      authStore.restore();
+      ambulatorioStore.restore();
+    } catch (error) {
+      console.error('Errore ripristino stato applicazione:', error);
+    }
+
+    if (typeof window !== 'undefined') {
+      (window as typeof window & { __gmdAppReady?: boolean }).__gmdAppReady = true;
+      window.dispatchEvent(new Event('gmd:app-ready'));
+    }
+
+    await notifyNativeAppReady();
+  }
+
+  onMount(() => {
+    void bootstrapApp();
   });
 </script>
 

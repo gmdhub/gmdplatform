@@ -1,0 +1,51 @@
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gmd_api_rw') THEN
+    CREATE ROLE gmd_api_rw NOLOGIN;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'gmd_api_readonly') THEN
+    CREATE ROLE gmd_api_readonly NOLOGIN;
+  END IF;
+END
+$$;
+
+GRANT USAGE ON SCHEMA org, iam, patient, clinical, scheduling, reporting, audit, compat TO gmd_api_rw, gmd_api_readonly;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA org, iam, patient, clinical, scheduling, reporting, audit TO gmd_api_rw;
+GRANT SELECT ON ALL TABLES IN SCHEMA org, iam, patient, clinical, scheduling, reporting, audit, compat TO gmd_api_readonly;
+
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA org, iam, patient, clinical, scheduling, reporting, audit TO gmd_api_rw;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA org, iam, patient, clinical, scheduling, reporting, audit TO gmd_api_readonly;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA org
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO gmd_api_rw;
+ALTER DEFAULT PRIVILEGES IN SCHEMA iam
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO gmd_api_rw;
+ALTER DEFAULT PRIVILEGES IN SCHEMA patient
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO gmd_api_rw;
+ALTER DEFAULT PRIVILEGES IN SCHEMA clinical
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO gmd_api_rw;
+ALTER DEFAULT PRIVILEGES IN SCHEMA scheduling
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO gmd_api_rw;
+ALTER DEFAULT PRIVILEGES IN SCHEMA reporting
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO gmd_api_rw;
+ALTER DEFAULT PRIVILEGES IN SCHEMA audit
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO gmd_api_rw;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA org
+  GRANT SELECT ON TABLES TO gmd_api_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA iam
+  GRANT SELECT ON TABLES TO gmd_api_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA patient
+  GRANT SELECT ON TABLES TO gmd_api_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA clinical
+  GRANT SELECT ON TABLES TO gmd_api_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA scheduling
+  GRANT SELECT ON TABLES TO gmd_api_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA reporting
+  GRANT SELECT ON TABLES TO gmd_api_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA audit
+  GRANT SELECT ON TABLES TO gmd_api_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA compat
+  GRANT SELECT ON TABLES TO gmd_api_readonly;

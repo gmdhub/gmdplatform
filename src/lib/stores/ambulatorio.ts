@@ -1,6 +1,9 @@
 // GMD Medical Platform - Ambulatorio Store
 import { writable } from 'svelte/store';
 import type { Ambulatorio } from '$lib/db/types';
+import { ensureStorageIsolationForEnvironment, getScopedStorageKey } from '$lib/db/config';
+
+const AMBULATORIO_STORAGE_KEY_BASE = 'gmd_ambulatorio';
 
 interface AmbulatorioState {
   current: Ambulatorio | null;
@@ -25,18 +28,22 @@ function createAmbulatorioStore() {
 
       // Salva in sessionStorage
       if (typeof window !== 'undefined') {
-        sessionStorage.setItem('gmd_ambulatorio', JSON.stringify(ambulatorio));
+        ensureStorageIsolationForEnvironment();
+        sessionStorage.setItem(getScopedStorageKey(AMBULATORIO_STORAGE_KEY_BASE), JSON.stringify(ambulatorio));
       }
     },
     clear: () => {
       set({ current: null });
       if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('gmd_ambulatorio');
+        ensureStorageIsolationForEnvironment();
+        sessionStorage.removeItem(getScopedStorageKey(AMBULATORIO_STORAGE_KEY_BASE));
+        sessionStorage.removeItem(AMBULATORIO_STORAGE_KEY_BASE);
       }
     },
     restore: () => {
       if (typeof window !== 'undefined') {
-        const stored = sessionStorage.getItem('gmd_ambulatorio');
+        ensureStorageIsolationForEnvironment();
+        const stored = sessionStorage.getItem(getScopedStorageKey(AMBULATORIO_STORAGE_KEY_BASE));
         if (stored) {
           const ambulatorio = JSON.parse(stored);
           set({ current: ambulatorio });

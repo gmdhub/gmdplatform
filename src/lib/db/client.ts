@@ -1,8 +1,22 @@
 import Database from '@tauri-apps/plugin-sql';
+import { getApiBaseUrl, isApiDataProvider } from './config';
 import { getRuntimeDatabaseUrl } from './config';
 
 let db: Database | null = null;
 let loadedDatabaseUrl: string | null = null;
+let isApiShimLoaded = false;
+
+function createApiDatabaseShim(): Database {
+  const throwUnsupported = () => {
+    throw new Error('Accesso SQL diretto non supportato con DATA_PROVIDER=api');
+  };
+
+  return {
+    select: throwUnsupported,
+    execute: throwUnsupported,
+    close: async () => undefined
+  } as unknown as Database;
+}
 
 function normalizeQueryParam(value: unknown): unknown {
   if (value === undefined || value === null) {
@@ -56,6 +70,13 @@ export async function loadDatabase(): Promise<Database> {
     return db;
   }
 
+  if (isApiDataProvider()) {
+    loadedDatabaseUrl = `api:${getApiBaseUrl()}`;
+    db = createApiDatabaseShim();
+    isApiShimLoaded = true;
+    return db;
+  }
+
   loadedDatabaseUrl = await getRuntimeDatabaseUrl();
   db = wrapDatabase(await Database.load(loadedDatabaseUrl));
   return db;
@@ -72,6 +93,14 @@ export function getLoadedDatabase(): Database {
 export async function resetLoadedDatabase(): Promise<void> {
   if (!db) {
     loadedDatabaseUrl = null;
+    isApiShimLoaded = false;
+    return;
+  }
+
+  if (isApiShimLoaded) {
+    db = null;
+    loadedDatabaseUrl = null;
+    isApiShimLoaded = false;
     return;
   }
 
@@ -90,10 +119,15 @@ export async function resetLoadedDatabase(): Promise<void> {
   } finally {
     db = null;
     loadedDatabaseUrl = null;
+    isApiShimLoaded = false;
   }
 }
 
 export async function insertReturningId(sql: string, params: unknown[]): Promise<number> {
+  if (isApiDataProvider()) {
+    throw new Error('insertReturningId non disponibile con DATA_PROVIDER=api');
+  }
+
   const result = await getLoadedDatabase().execute(sql, params);
   const insertedId = Number(result.lastInsertId);
 

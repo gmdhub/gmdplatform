@@ -1,6 +1,7 @@
 // GMD Medical Platform - Database Schema
 import type Database from '@tauri-apps/plugin-sql';
 import { loadDatabase, getLoadedDatabase, resetLoadedDatabase } from './client';
+import { getApiBaseUrl, isApiDataProvider } from './config';
 import { applyMigrations } from './migrations';
 
 let initPromise: Promise<Database> | null = null;
@@ -90,10 +91,23 @@ export async function reinitializeDatabase(): Promise<Database> {
 }
 
 async function initializeDatabase(): Promise<Database> {
+  if (isApiDataProvider()) {
+    await assertApiHealth();
+    return loadDatabase();
+  }
+
   const db = await loadDatabase();
   await applyMigrations(db);
   await ensureBootstrapData(db);
   return db;
+}
+
+async function assertApiHealth(): Promise<void> {
+  const baseUrl = getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/health`);
+  if (!response.ok) {
+    throw new Error(`Backend API non raggiungibile (${response.status}) su ${baseUrl}`);
+  }
 }
 
 async function ensureBootstrapData(db: Database): Promise<void> {

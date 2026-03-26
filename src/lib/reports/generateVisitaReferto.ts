@@ -1,9 +1,12 @@
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import { mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs';
+import { invoke } from '@tauri-apps/api/core';
 import { join, resolveResource } from '@tauri-apps/api/path';
 import { rischioCVOptions } from '$lib/configs/clinical-options';
 import { getAmbulatorioById } from '$lib/db/ambulatori';
+import { isApiDataProvider } from '$lib/db/config';
+import { getVisitaById } from '$lib/db/visite';
 import type {
   EsamiEmaticiValues,
   FHAssessment,
@@ -14,6 +17,7 @@ import type {
   TitoloFirmaMedico,
   ValutazioneRischioCardiovascolare
 } from '$lib/db/types';
+import { createReportMetadata } from '$lib/services/report-service';
 import { getReportBaseDirectory, sanitizeReportFolderName } from '$lib/utils/report-storage';
 
 const REPORT_TITLE = 'AMBULATORIO CARDIOLOGICO DELLE DISLIPIDEMIE';
@@ -73,6 +77,7 @@ export type GenerateVisitaRefertoInput = {
 export type GenerateVisitaRefertoResult = {
   saved: boolean;
   path?: string;
+  pdfPath?: string;
 };
 
 const esamiTemplateOrder: Array<{
@@ -389,6 +394,20 @@ function buildProssimaVisitaLabel(pianificazioneFollowUp: PianificazioneFollowUp
   return `${formattedDate} - ${motivo}`;
 }
 
+function buildEsenzioneValue(rawValue: string | null | undefined): string {
+  const normalized = (rawValue ?? '').trim();
+  if (!normalized) {
+    return '-';
+  }
+
+  const compact = normalized.toLowerCase();
+  if (compact === 'nessuno' || compact === 'non esente' || compact === 'nessuna') {
+    return '-';
+  }
+
+  return normalized;
+}
+
 function buildReportData(input: GenerateVisitaRefertoInput): Record<string, string> {
   const fattoriRischioList = buildFattoriRischioList(input.fattoriRischio, input.formData.bmi);
   const anamnesiPatologicaRemota = cleanupMarkdown(input.anamnesiPatologicaRemota);
@@ -403,19 +422,19 @@ function buildReportData(input: GenerateVisitaRefertoInput): Record<string, stri
       : buildConditionalPair('Fattori di rischio CV:', fattoriRischioList);
 
   const aprPair = buildConditionalPair('Anamnesi patologica remota:', anamnesiPatologicaRemota);
-  const terapiaIpolipemizzantePair = buildConditionalPair(
-    'Terapia ipolipemizzante:',
-    terapiaIpolipemizzante
-  );
+  const terapiaIpolipemizzantePair =
+    terapiaIpolipemizzante.trim().length > 0
+      ? buildConditionalPair('Terapia ipolipemizzante:', terapiaIpolipemizzante)
+      : { header: 'terapia ipolipemizzante:', value: 'nessuna in atto.' };
   const terapiaDomiciliarePair = buildConditionalPair(
     'Restante terapia domiciliare:',
     terapiaDomiciliare
   );
   const hasFhAssessment = input.fhAssessment.enabled;
-  const fhHeader = hasFhAssessment ? 'Ipercolesterolemia familiare:' : '';
+  const fhHeader = hasFhAssessment ? 'Ipercolesterolemia familiare:' : 'ipercolesterolemia familiare:';
   const fhScore = hasFhAssessment
     ? `Dutch Lipid Score ${input.fhAssessment.totalScore} - ${buildFhDiagnosisLabel(input.fhAssessment.classification)}`
-    : '';
+    : 'non presente.';
 
   const cardiologoNome = input.firmeVisita.cardiologoNome.trim();
   const specializzandi: ReportSpecializzando[] = input.firmeVisita.mediciInFormazione
@@ -437,6 +456,7 @@ function buildReportData(input: GenerateVisitaRefertoInput): Record<string, stri
     comune_nascita: input.paziente.luogo_nascita,
     data_nascita: formatDate(input.paziente.data_nascita),
     codice_fiscale: input.paziente.codice_fiscale,
+    esenzione: buildEsenzioneValue(input.paziente.esenzioni),
     telefono: input.paziente.telefono?.trim() || '',
     peso: input.formData.peso.trim() || '',
     altezza: input.formData.altezza.trim() || '',
@@ -576,6 +596,21 @@ function ensureDocxExtension(filePath: string): string {
   return filePath.toLowerCase().endsWith('.docx') ? filePath : `${filePath}.docx`;
 }
 
+function buildHiddenPdfPathFromDocx(docxPath: string): string {
+  const separatorIndex = Math.max(docxPath.lastIndexOf('/'), docxPath.lastIndexOf('\\'));
+  const directory = separatorIndex >= 0 ? docxPath.slice(0, separatorIndex + 1) : '';
+  const fileName = separatorIndex >= 0 ? docxPath.slice(separatorIndex + 1) : docxPath;
+  const pdfFileName = fileName.replace(/\.docx$/i, '.pdf');
+  const hiddenPdfFileName = pdfFileName.startsWith('.') ? pdfFileName : `.${pdfFileName}`;
+  return `${directory}${hiddenPdfFileName}`;
+}
+
+async function computeSha256Hex(content: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', content);
+  const bytes = new Uint8Array(digest);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+}
+
 async function resolveAmbulatorioDirectory(input: GenerateVisitaRefertoInput): Promise<string> {
   const baseDirectory = await getReportBaseDirectory();
   const ambulatorio = await getAmbulatorioById(input.paziente.ambulatorio_id);
@@ -606,7 +641,7 @@ export async function resolveVisitaRefertoOutputPaths(
   input: GenerateVisitaRefertoInput
 ): Promise<{ docxPath: string; pdfPath: string }> {
   const docxPath = await resolveOutputPath(input);
-  const pdfPath = docxPath.replace(/\.docx$/i, '.pdf');
+  const pdfPath = buildHiddenPdfPathFromDocx(docxPath);
   return { docxPath, pdfPath };
 }
 
@@ -622,11 +657,52 @@ export async function generateVisitaReferto(
 ): Promise<GenerateVisitaRefertoResult> {
   const content = await buildVisitaRefertoDocxContent(input);
   const resolvedPath = await resolveOutputPath(input);
+  const hiddenPdfPath = buildHiddenPdfPathFromDocx(resolvedPath);
 
   await writeFile(resolvedPath, content, { create: true });
 
+  let resolvedPdfPath: string | undefined;
+  try {
+    resolvedPdfPath = await invoke<string>('convert_docx_to_pdf', {
+      docxPath: resolvedPath,
+      outputPdfPath: hiddenPdfPath
+    });
+  } catch (errorWithOutputPath) {
+    try {
+      resolvedPdfPath = await invoke<string>('convert_docx_to_pdf', {
+        docxPath: resolvedPath
+      });
+    } catch (errorLegacyMode) {
+      console.warn(
+        'Impossibile pre-generare il PDF referto:',
+        `${getErrorMessage(errorWithOutputPath)} | fallback legacy: ${getErrorMessage(errorLegacyMode)}`
+      );
+    }
+  }
+
+  if (isApiDataProvider() && input.visitaId) {
+    try {
+      const visita = await getVisitaById(input.visitaId);
+      if (visita?.internal_revision_id) {
+        await createReportMetadata({
+          encounter_revision_id: visita.internal_revision_id,
+          template_code: 'template_dislip',
+          template_name: 'Template Dislipidemie',
+          template_version: 1,
+          storage_uri: resolvedPath,
+          file_sha256: await computeSha256Hex(content),
+          file_size_bytes: content.byteLength,
+          mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        });
+      }
+    } catch (error) {
+      console.warn('Impossibile salvare metadata referto su API:', error);
+    }
+  }
+
   return {
     saved: true,
-    path: resolvedPath
+    path: resolvedPath,
+    pdfPath: resolvedPdfPath
   };
 }

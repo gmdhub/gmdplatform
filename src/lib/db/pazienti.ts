@@ -1,6 +1,17 @@
 // GMD Medical Platform - Pazienti Database Operations
 import { insertReturningId } from './client';
+import { isApiDataProvider } from './config';
 import { initDatabase } from './schema';
+import {
+  createPazienteFromApi,
+  createPazienteRapidoFromApi,
+  deletePazienteFromApi,
+  getAllPazientiFromApi,
+  getPazienteByIdFromApi,
+  getPazientiByAmbulatorioFromApi,
+  searchPazientiFromApi,
+  updatePazienteFromApi
+} from '$lib/services/pazienti-service';
 import type {
   CreatePazienteInput,
   CreatePazienteRapidoInput,
@@ -27,6 +38,10 @@ function pushField(fields: string[], values: unknown[], column: string, value: u
 }
 
 export async function getAllPazienti(): Promise<Paziente[]> {
+  if (isApiDataProvider()) {
+    return getAllPazientiFromApi();
+  }
+
   const db = await initDatabase();
   return db.select<Paziente[]>(
     `SELECT * FROM pazienti
@@ -36,10 +51,18 @@ export async function getAllPazienti(): Promise<Paziente[]> {
 
 // Manteniamo questa funzione per compatibilita, ma ora restituisce tutti i pazienti
 export async function getPazientiByAmbulatorio(_ambulatorioId: number): Promise<Paziente[]> {
+  if (isApiDataProvider()) {
+    return getPazientiByAmbulatorioFromApi(_ambulatorioId);
+  }
+
   return getAllPazienti();
 }
 
 export async function getPazienteById(id: number): Promise<Paziente | null> {
+  if (isApiDataProvider()) {
+    return getPazienteByIdFromApi(id);
+  }
+
   const db = await initDatabase();
   const result = await db.select<Paziente[]>(
     'SELECT * FROM pazienti WHERE id = ?',
@@ -52,6 +75,10 @@ export async function searchPazienti(
   _ambulatorioId: number,
   searchTerm: string
 ): Promise<Paziente[]> {
+  if (isApiDataProvider()) {
+    return searchPazientiFromApi(_ambulatorioId, searchTerm);
+  }
+
   const db = await initDatabase();
   const term = `%${searchTerm}%`;
   return db.select<Paziente[]>(
@@ -67,6 +94,10 @@ export async function searchPazienti(
 }
 
 export async function createPaziente(data: CreatePazienteInput): Promise<number> {
+  if (isApiDataProvider()) {
+    return createPazienteFromApi(data);
+  }
+
   await initDatabase();
 
   return insertReturningId(
@@ -110,6 +141,10 @@ function buildTemporaryCodiceFiscale(nome: string, cognome: string): string {
 }
 
 export async function createPazienteRapido(data: CreatePazienteRapidoInput): Promise<number> {
+  if (isApiDataProvider()) {
+    return createPazienteRapidoFromApi(data);
+  }
+
   const nome = data.nome.trim();
   const cognome = data.cognome.trim();
   const telefono = data.telefono.trim();
@@ -144,6 +179,11 @@ export async function createPazienteRapido(data: CreatePazienteRapidoInput): Pro
 }
 
 export async function updatePaziente(data: UpdatePazienteInput): Promise<void> {
+  if (isApiDataProvider()) {
+    await updatePazienteFromApi(data);
+    return;
+  }
+
   const db = await initDatabase();
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -202,6 +242,11 @@ export async function updatePaziente(data: UpdatePazienteInput): Promise<void> {
 }
 
 export async function deletePaziente(id: number): Promise<void> {
+  if (isApiDataProvider()) {
+    await deletePazienteFromApi(id);
+    return;
+  }
+
   const db = await initDatabase();
   await db.execute('DELETE FROM pazienti WHERE id = ?', [
     normalizeIntegerForWrite(id)

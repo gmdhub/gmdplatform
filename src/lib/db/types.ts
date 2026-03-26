@@ -3,7 +3,7 @@
 export interface User {
   id: number;
   username: string;
-  password_hash: string;
+  password_hash?: string;
   role: 'admin' | 'medico' | 'infermiere';
   nome: string;
   cognome: string;
@@ -261,6 +261,8 @@ export interface Visita {
   paziente_codice_fiscale?: string;
   medico_nome?: string;
   medico_cognome?: string;
+  internal_revision_id?: string;
+  internal_encounter_id?: string;
 }
 
 export interface CreateVisitaInput {

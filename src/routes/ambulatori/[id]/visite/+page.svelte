@@ -101,6 +101,15 @@
     return 'Errore sconosciuto';
   }
 
+  async function safeExists(path: string): Promise<boolean> {
+    try {
+      return await exists(path);
+    } catch (error) {
+      console.warn(`Permission check failed for path "${path}":`, getErrorMessage(error));
+      return false;
+    }
+  }
+
   async function loadVisite() {
     if (!ambulatorio) return;
 
@@ -228,22 +237,48 @@
       ]);
       const reportInput = await buildVisitaRefertoInput(visita);
       const { docxPath, pdfPath } = await resolveVisitaRefertoOutputPaths(reportInput);
+      const legacyPdfPath = docxPath.replace(/\.docx$/i, '.pdf');
 
       let resolvedPdfPath = pdfPath;
-      if (!(await exists(pdfPath))) {
+      if (!(await safeExists(resolvedPdfPath)) && (await safeExists(legacyPdfPath))) {
+        resolvedPdfPath = legacyPdfPath;
+      }
+
+      if (!(await safeExists(resolvedPdfPath))) {
         let sourceDocxPath = docxPath;
 
-        if (!(await exists(docxPath))) {
+        if (!(await safeExists(docxPath))) {
           const reportResult = await generateVisitaReferto(reportInput);
           if (!reportResult.saved || !reportResult.path) {
             throw new Error('Impossibile generare il referto DOCX');
           }
           sourceDocxPath = reportResult.path;
+          if (reportResult.pdfPath && (await safeExists(reportResult.pdfPath))) {
+            resolvedPdfPath = reportResult.pdfPath;
+          }
         }
 
-        resolvedPdfPath = await invoke<string>('convert_docx_to_pdf', {
-          docxPath: sourceDocxPath
-        });
+        if (!(await safeExists(resolvedPdfPath))) {
+          try {
+            resolvedPdfPath = await invoke<string>('convert_docx_to_pdf', {
+              docxPath: sourceDocxPath,
+              outputPdfPath: pdfPath
+            });
+            if (!(await safeExists(resolvedPdfPath))) {
+              resolvedPdfPath = await invoke<string>('convert_docx_to_pdf', {
+                docxPath: sourceDocxPath
+              });
+            }
+          } catch (errorWithOutputPath) {
+            resolvedPdfPath = await invoke<string>('convert_docx_to_pdf', {
+              docxPath: sourceDocxPath
+            });
+            console.warn(
+              'Fallback conversione PDF in modalità legacy:',
+              getErrorMessage(errorWithOutputPath)
+            );
+          }
+        }
       }
 
       const pdfBytes = await readFile(resolvedPdfPath);
@@ -252,8 +287,7 @@
     } catch (error) {
       console.error('Errore visualizzazione referto visita:', error);
       console.error('Dettaglio errore anteprima referto:', getErrorMessage(error));
-      reportPreviewError =
-        "Anteprima non disponibile al momento. Verifica che Microsoft Word o LibreOffice siano installati correttamente.";
+      reportPreviewError = `Anteprima non disponibile: ${getErrorMessage(error)}`;
     } finally {
       reportPreviewLoading = false;
       viewingReportVisitId = null;

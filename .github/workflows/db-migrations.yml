@@ -1,0 +1,104 @@
+name: Safe DB Migrations
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - prod
+      confirm_prod:
+        description: "Type YES to run production migrations"
+        required: false
+        default: "NO"
+        type: string
+
+jobs:
+  migrate-dev:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'dev')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install server dependencies
+        run: npm --prefix server ci
+
+      - name: Run dev migrations
+        env:
+          APP_ENV: development
+          API_HOST: 0.0.0.0
+          API_PORT: 8787
+          ACCESS_TOKEN_TTL_SECONDS: 900
+          REFRESH_TOKEN_TTL_SECONDS: 2592000
+          CORS_ORIGIN: '*'
+          API_JWT_SECRET: ${{ secrets.DEV_API_JWT_SECRET }}
+          SUPABASE_DB_URL: ${{ secrets.DEV_SUPABASE_DB_URL }}
+          SUPABASE_PROJECT_REF_EXPECTED: ${{ secrets.DEV_SUPABASE_PROJECT_REF }}
+          SUPABASE_PROD_PROJECT_REF: ${{ secrets.PROD_SUPABASE_PROJECT_REF }}
+          ALLOW_DEV_PROD_DB: 'NO'
+        run: npm --prefix server run migrate
+
+  migrate-prod:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'prod'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Validate production confirmation
+        shell: bash
+        run: |
+          if [[ "${{ inputs.confirm_prod }}" != "YES" ]]; then
+            echo "Production migration blocked: set confirm_prod=YES."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install server dependencies
+        run: npm --prefix server ci
+
+      - name: Run production migrations
+        env:
+          APP_ENV: production
+          API_HOST: 0.0.0.0
+          API_PORT: 8787
+          ACCESS_TOKEN_TTL_SECONDS: 900
+          REFRESH_TOKEN_TTL_SECONDS: 2592000
+          CORS_ORIGIN: '*'
+          API_JWT_SECRET: ${{ secrets.PROD_API_JWT_SECRET }}
+          SUPABASE_DB_URL: ${{ secrets.PROD_SUPABASE_DB_URL }}
+          SUPABASE_PROJECT_REF_EXPECTED: ${{ secrets.PROD_SUPABASE_PROJECT_REF }}
+          SUPABASE_PROD_PROJECT_REF: ${{ secrets.PROD_SUPABASE_PROJECT_REF }}
+          ALLOW_DEV_PROD_DB: 'NO'
+          CONFIRM_PROD_MIGRATION: 'YES'
+        run: npm --prefix server run migrate

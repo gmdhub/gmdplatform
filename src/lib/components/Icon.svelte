@@ -1,5 +1,8 @@
 <script lang="ts">
   import type { ComponentType } from 'svelte';
+  import FileUser from 'lucide-svelte/icons/file-user';
+  import UserPen from 'lucide-svelte/icons/user-pen';
+  import UserSearch from 'lucide-svelte/icons/user-search';
   import type { IconName } from './icon-names';
   import {
     AlertTriangle,
@@ -59,6 +62,7 @@
     eye: Eye,
     'eye-off': EyeOff,
     'file-plus': FilePlus,
+    'file-user': FileUser,
     'file-text': FileText,
     flask: FlaskConical,
     'folder-open': FolderOpen,
@@ -83,7 +87,9 @@
     trash: Trash2,
     underline: Underline,
     user: User,
+    'user-pen': UserPen,
     'user-plus': UserPlus,
+    'user-search': UserSearch,
     users: Users
   };
 

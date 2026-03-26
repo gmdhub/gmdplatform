@@ -1,8 +1,19 @@
 // GMD Medical Platform - Authentication
 import bcrypt from 'bcryptjs';
+import { isApiDataProvider } from './config';
 import { insertReturningId } from './client';
 import { initDatabase } from './schema';
 import type { User } from './types';
+import { authStore } from '$lib/stores/auth';
+import {
+  createUserFromApi,
+  disableUserFromApi,
+  getAllUsersFromApi,
+  loginWithApi,
+  updateUserFromApi,
+  updateUserPasswordFromApi,
+  verifyUserPasswordFromApi
+} from '$lib/services/auth-service';
 
 function normalizeIntegerForWrite(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined) {
@@ -17,13 +28,30 @@ function normalizeIntegerForWrite(value: number | string | null | undefined): nu
   return normalized;
 }
 
+function sanitizeUser(user: User): User {
+  const { password_hash: _passwordHash, ...safeUser } = user;
+  return safeUser;
+}
+
 export async function authenticateUser(
   username: string,
   password: string
 ): Promise<User | null> {
+  if (isApiDataProvider()) {
+    const result = await loginWithApi(username, password);
+    if (!result) {
+      return null;
+    }
+
+    authStore.setTokens(result.tokens);
+    return sanitizeUser(result.user);
+  }
+
   const db = await initDatabase();
   const result = await db.select<User[]>(
-    'SELECT * FROM users WHERE username = ?',
+    `SELECT id, username, password_hash, role, nome, cognome, created_at, updated_at
+     FROM users
+     WHERE username = ?`,
     [username]
   );
 
@@ -32,13 +60,13 @@ export async function authenticateUser(
   }
 
   const user = result[0];
-  const isValid = await bcrypt.compare(password, user.password_hash);
+  const isValid = await bcrypt.compare(password, user.password_hash ?? '');
 
   if (!isValid) {
     return null;
   }
 
-  return user;
+  return sanitizeUser(user);
 }
 
 export async function createUser(
@@ -48,6 +76,10 @@ export async function createUser(
   nome: string,
   cognome: string
 ): Promise<number> {
+  if (isApiDataProvider()) {
+    return createUserFromApi({ username, password, role, nome, cognome });
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
 
   return insertReturningId(
@@ -58,10 +90,18 @@ export async function createUser(
 }
 
 export async function getAllUsers(): Promise<User[]> {
+  if (isApiDataProvider()) {
+    return getAllUsersFromApi();
+  }
+
   const db = await initDatabase();
-  return db.select<User[]>(
-    'SELECT * FROM users ORDER BY cognome, nome'
+  const rows = await db.select<User[]>(
+    `SELECT id, username, role, nome, cognome, created_at, updated_at
+     FROM users
+     ORDER BY cognome, nome`
   );
+
+  return rows.map((row) => sanitizeUser(row));
 }
 
 export async function updateUser(
@@ -71,6 +111,16 @@ export async function updateUser(
   nome?: string,
   cognome?: string
 ): Promise<void> {
+  if (isApiDataProvider()) {
+    await updateUserFromApi(userId, {
+      username,
+      role,
+      nome,
+      cognome
+    });
+    return;
+  }
+
   const db = await initDatabase();
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -106,6 +156,10 @@ export async function updateUser(
 }
 
 export async function verifyUserPassword(userId: number, password: string): Promise<boolean> {
+  if (isApiDataProvider()) {
+    return verifyUserPasswordFromApi(userId, password);
+  }
+
   const db = await initDatabase();
   const result = await db.select<Array<{ password_hash: string }>>(
     'SELECT password_hash FROM users WHERE id = ?',
@@ -120,6 +174,11 @@ export async function verifyUserPassword(userId: number, password: string): Prom
 }
 
 export async function updateUserPassword(userId: number, newPassword: string): Promise<void> {
+  if (isApiDataProvider()) {
+    await updateUserPasswordFromApi(userId, newPassword);
+    return;
+  }
+
   const db = await initDatabase();
   const passwordHash = await bcrypt.hash(newPassword, 10);
 
@@ -130,6 +189,11 @@ export async function updateUserPassword(userId: number, newPassword: string): P
 }
 
 export async function deleteUser(userId: number): Promise<void> {
+  if (isApiDataProvider()) {
+    await disableUserFromApi(userId);
+    return;
+  }
+
   const db = await initDatabase();
   await db.execute('DELETE FROM users WHERE id = ?', [
     normalizeIntegerForWrite(userId)

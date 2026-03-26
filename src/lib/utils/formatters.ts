@@ -5,8 +5,31 @@
  */
 export function formatDate(isoDate: string): string {
   if (!isoDate) return '';
-  const [year, month, day] = isoDate.split('-');
-  return `${day}/${month}/${year}`;
+
+  const normalizedValue = String(isoDate).trim();
+  if (!normalizedValue) return '';
+
+  // Handles plain dates and datetime strings like "YYYY-MM-DDTHH:mm[:ss][Z]"
+  const isoDateMatch = normalizedValue.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDateMatch) {
+    return `${isoDateMatch[3]}/${isoDateMatch[2]}/${isoDateMatch[1]}`;
+  }
+
+  // If already in Italian format keep it as-is
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(normalizedValue)) {
+    return normalizedValue;
+  }
+
+  const parsedDate = new Date(normalizedValue);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return normalizedValue;
+  }
+
+  return new Intl.DateTimeFormat('it-IT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }).format(parsedDate);
 }
 
 /**

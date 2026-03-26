@@ -1,6 +1,6 @@
 [package]
 name = "gmd-platform"
-version = "0.1.0"
+version = "0.1.1"
 description = "GMD Medical - Piattaforma per Ambulatori Ospedalieri"
 authors = ["GMD Medical"]
 edition = "2021"

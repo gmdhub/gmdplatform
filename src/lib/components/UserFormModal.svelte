@@ -6,6 +6,7 @@
   export let isOpen = false;
 
   const dispatch = createEventDispatcher();
+  const MIN_PASSWORD_LENGTH = 8;
 
   let formData = {
     username: '',
@@ -49,10 +50,19 @@
       return;
     }
 
+    if (!user && formData.password.length < MIN_PASSWORD_LENGTH) {
+      alert(`La password deve contenere almeno ${MIN_PASSWORD_LENGTH} caratteri`);
+      return;
+    }
+
     // Validazione per modifica password utente esistente
     if (user && formData.password) {
       if (!formData.oldPassword) {
         alert('Inserisci la vecchia password per modificarla');
+        return;
+      }
+      if (formData.password.length < MIN_PASSWORD_LENGTH) {
+        alert(`La nuova password deve contenere almeno ${MIN_PASSWORD_LENGTH} caratteri`);
         return;
       }
       if (formData.password !== formData.confirmPassword) {
@@ -159,7 +169,7 @@
               bind:value={formData.password}
               required
               placeholder="Password"
-              minlength="6"
+              minlength={MIN_PASSWORD_LENGTH}
             />
           </div>
 
@@ -171,7 +181,7 @@
               bind:value={formData.confirmPassword}
               required
               placeholder="Conferma Password"
-              minlength="6"
+              minlength={MIN_PASSWORD_LENGTH}
             />
           </div>
         {:else}
@@ -194,7 +204,7 @@
                 type="password"
                 bind:value={formData.password}
                 placeholder="Inserisci la nuova password"
-                minlength="6"
+                minlength={MIN_PASSWORD_LENGTH}
               />
             </div>
 
@@ -205,7 +215,7 @@
                 type="password"
                 bind:value={formData.confirmPassword}
                 placeholder="Conferma la nuova password"
-                minlength="6"
+                minlength={MIN_PASSWORD_LENGTH}
               />
             </div>
           </div>

@@ -1,6 +1,15 @@
 // GMD Medical Platform - Ambulatori Database Operations
 import { insertReturningId } from './client';
+import { isApiDataProvider } from './config';
 import { initDatabase } from './schema';
+import {
+  getAllAmbulatoriFromApi,
+  getAmbulatorioByIdFromApi,
+  getAmbulatorioOperatingSettingsByIdFromApi,
+  getAmbulatorioOperatingWindowsByIdFromApi,
+  updateAmbulatorioFromApi,
+  updateAmbulatorioOperatingSettingsFromApi
+} from '$lib/services/ambulatori-service';
 import type {
   Ambulatorio,
   AmbulatorioOperatingSettings,
@@ -147,6 +156,10 @@ function normalizeIntegerForWrite(value: number | string | null | undefined): nu
 }
 
 export async function getAllAmbulatori(): Promise<Ambulatorio[]> {
+  if (isApiDataProvider()) {
+    return getAllAmbulatoriFromApi();
+  }
+
   const db = await initDatabase();
   return db.select<Ambulatorio[]>(
     'SELECT * FROM ambulatori ORDER BY nome'
@@ -154,6 +167,10 @@ export async function getAllAmbulatori(): Promise<Ambulatorio[]> {
 }
 
 export async function getAmbulatorioById(id: number): Promise<Ambulatorio | null> {
+  if (isApiDataProvider()) {
+    return getAmbulatorioByIdFromApi(id);
+  }
+
   const db = await initDatabase();
   const result = await db.select<Ambulatorio[]>(
     'SELECT * FROM ambulatori WHERE id = ?',
@@ -169,6 +186,10 @@ export async function createAmbulatorio(
   colorSecondary: string,
   colorAccent: string
 ): Promise<number> {
+  if (isApiDataProvider()) {
+    throw new Error('Creazione ambulatorio non ancora supportata in modalità API');
+  }
+
   return insertReturningId(
     `INSERT INTO ambulatori (nome, logo_path, color_primary, color_secondary, color_accent)
      VALUES (?, ?, ?, ?, ?)`,
@@ -187,6 +208,17 @@ export async function updateAmbulatorio(
   telefono?: string,
   email?: string
 ): Promise<void> {
+  if (isApiDataProvider()) {
+    await updateAmbulatorioFromApi(id, {
+      nome,
+      logo_path: logoPath,
+      color_primary: colorPrimary,
+      color_secondary: colorSecondary,
+      color_accent: colorAccent
+    });
+    return;
+  }
+
   const db = await initDatabase();
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -240,6 +272,10 @@ export async function updateAmbulatorio(
 export async function getAmbulatorioOperatingWindowsById(
   ambulatorioId: number
 ): Promise<AmbulatorioOperatingWindow[]> {
+  if (isApiDataProvider()) {
+    return getAmbulatorioOperatingWindowsByIdFromApi(ambulatorioId);
+  }
+
   const db = await initDatabase();
   return db.select<AmbulatorioOperatingWindow[]>(
     `SELECT *
@@ -253,6 +289,10 @@ export async function getAmbulatorioOperatingWindowsById(
 export async function getAmbulatorioOperatingSettingsById(
   ambulatorioId: number
 ): Promise<AmbulatorioOperatingSettings> {
+  if (isApiDataProvider()) {
+    return getAmbulatorioOperatingSettingsByIdFromApi(ambulatorioId);
+  }
+
   const ambulatorio = await getAmbulatorioById(ambulatorioId);
   if (!ambulatorio) {
     throw new Error(`Ambulatorio ${ambulatorioId} non trovato`);
@@ -283,6 +323,11 @@ export async function updateAmbulatorioOperatingSettings(input: {
   durataStandardVisitaMinuti: number;
   windows: UpsertAmbulatorioOperatingWindowInput[];
 }): Promise<void> {
+  if (isApiDataProvider()) {
+    await updateAmbulatorioOperatingSettingsFromApi(input);
+    return;
+  }
+
   const ambulatorioId = normalizeIntegerForWrite(input.ambulatorioId);
   const durataMinimaVisitaMinuti = normalizeMinVisitDuration(input.durataMinimaVisitaMinuti);
   const durataStandardVisitaMinuti = normalizeStandardVisitDuration(
@@ -339,6 +384,10 @@ export async function updateAmbulatorioOperatingSettings(input: {
 }
 
 export async function deleteAmbulatorio(id: number): Promise<void> {
+  if (isApiDataProvider()) {
+    throw new Error('Eliminazione ambulatorio non supportata in modalità API');
+  }
+
   const db = await initDatabase();
   await db.execute('DELETE FROM ambulatori WHERE id = ?', [
     normalizeIntegerForWrite(id)

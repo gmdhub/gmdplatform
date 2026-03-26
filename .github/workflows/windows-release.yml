@@ -105,6 +105,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install server dependencies
+        run: npm --prefix server ci
+
       - name: Validate frontend env (production only)
         shell: bash
         run: |
@@ -187,6 +190,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install server dependencies
+        run: npm --prefix server ci
 
       - name: Validate frontend env (production only)
         shell: bash

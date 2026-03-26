@@ -5,9 +5,20 @@ import { resolve } from 'node:path';
 const projectRoot = process.cwd();
 const serverDistDir = resolve(projectRoot, 'server/dist');
 const envOutputPath = resolve(serverDistDir, '.env');
+const serverNodeModulesDir = resolve(projectRoot, 'server/node_modules');
+const serverFastifyPackageJson = resolve(serverNodeModulesDir, 'fastify/package.json');
 
 function run(command) {
   execSync(command, { cwd: projectRoot, stdio: 'inherit' });
+}
+
+function ensureServerDependencies() {
+  if (existsSync(serverNodeModulesDir) && existsSync(serverFastifyPackageJson)) {
+    return;
+  }
+
+  console.log('[bundle] server/node_modules non trovato o incompleto: eseguo npm --prefix server ci');
+  run('npm --prefix server ci');
 }
 
 function copyRuntimeEnvFile() {
@@ -35,6 +46,7 @@ function copyRuntimeEnvFile() {
   console.warn('[bundle] WARNING: API env file not found; bundled API may fail at runtime.');
 }
 
+ensureServerDependencies();
 run('npm run build');
 run('npm --prefix server run build');
 copyRuntimeEnvFile();

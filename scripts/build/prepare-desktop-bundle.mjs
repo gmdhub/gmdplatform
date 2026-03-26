@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const projectRoot = process.cwd();
@@ -107,28 +107,30 @@ function bundleNodeRuntime() {
 }
 
 function copyRuntimeEnvFile() {
-  const candidates = [
-    resolve(projectRoot, 'server/.env.prod'),
-    resolve(projectRoot, 'server/.env')
-  ];
+  const productionEnvFile = resolve(projectRoot, 'server/.env.prod');
+  const localEnvFile = resolve(projectRoot, 'server/.env');
+  const selected = existsSync(productionEnvFile)
+    ? productionEnvFile
+    : existsSync(localEnvFile)
+      ? localEnvFile
+      : null;
 
-  const selected = candidates.find((candidate) => existsSync(candidate));
-  if (selected) {
-    copyFileSync(selected, envOutputPath);
-    console.log(`[bundle] API env file copied: ${selected} -> ${envOutputPath}`);
-    return;
-  }
-
-  const fallback = resolve(projectRoot, 'server/.env.prod.example');
-  if (existsSync(fallback)) {
-    copyFileSync(fallback, envOutputPath);
-    console.warn(
-      `[bundle] WARNING: no server/.env.prod or server/.env found. Copied fallback ${fallback} -> ${envOutputPath}`
+  if (!selected) {
+    throw new Error(
+      '[bundle] Missing server runtime env file. Required: server/.env.prod (preferred) or server/.env.'
     );
-    return;
   }
 
-  console.warn('[bundle] WARNING: API env file not found; bundled API may fail at runtime.');
+  copyFileSync(selected, envOutputPath);
+  const content = readFileSync(envOutputPath, 'utf8');
+  const looksLikePlaceholder = /replace-with-|REPLACE_|<prod-project-ref>|\[YOUR-PASSWORD\]/i.test(content);
+  if (looksLikePlaceholder) {
+    throw new Error(
+      `[bundle] Runtime env appears invalid (placeholder values found) in ${selected}. Build aborted.`
+    );
+  }
+
+  console.log(`[bundle] API env file copied: ${selected} -> ${envOutputPath}`);
 }
 
 ensureServerDependencies();

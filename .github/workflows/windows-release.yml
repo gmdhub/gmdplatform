@@ -109,6 +109,23 @@ jobs:
       - name: Install server dependencies
         run: npm --prefix server ci
 
+      - name: Generate production API env file
+        shell: bash
+        run: |
+          cat > server/.env.prod <<EOF
+          APP_ENV=production
+          API_HOST=0.0.0.0
+          API_PORT=8787
+          ACCESS_TOKEN_TTL_SECONDS=900
+          REFRESH_TOKEN_TTL_SECONDS=2592000
+          CORS_ORIGIN=*
+          ALLOW_DEV_PROD_DB=NO
+          API_JWT_SECRET=${{ secrets.PROD_API_JWT_SECRET }}
+          SUPABASE_DB_URL=${{ secrets.PROD_SUPABASE_DB_URL }}
+          SUPABASE_PROJECT_REF_EXPECTED=${{ secrets.PROD_SUPABASE_PROJECT_REF }}
+          SUPABASE_PROD_PROJECT_REF=${{ secrets.PROD_SUPABASE_PROJECT_REF }}
+          EOF
+
       - name: Validate frontend env (production only)
         shell: bash
         run: |
@@ -194,6 +211,23 @@ jobs:
 
       - name: Install server dependencies
         run: npm --prefix server ci
+
+      - name: Generate production API env file
+        shell: bash
+        run: |
+          cat > server/.env.prod <<EOF
+          APP_ENV=production
+          API_HOST=0.0.0.0
+          API_PORT=8787
+          ACCESS_TOKEN_TTL_SECONDS=900
+          REFRESH_TOKEN_TTL_SECONDS=2592000
+          CORS_ORIGIN=*
+          ALLOW_DEV_PROD_DB=NO
+          API_JWT_SECRET=${{ secrets.PROD_API_JWT_SECRET }}
+          SUPABASE_DB_URL=${{ secrets.PROD_SUPABASE_DB_URL }}
+          SUPABASE_PROJECT_REF_EXPECTED=${{ secrets.PROD_SUPABASE_PROJECT_REF }}
+          SUPABASE_PROD_PROJECT_REF=${{ secrets.PROD_SUPABASE_PROJECT_REF }}
+          EOF
 
       - name: Validate frontend env (production only)
         shell: bash

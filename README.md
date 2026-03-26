@@ -4,6 +4,16 @@ Applicazione desktop per la gestione di ambulatori ospedalieri, sviluppata con `
 
 Non richiede un backend HTTP separato: il frontend usa direttamente i plugin Tauri per accedere al database, aprire dialog nativi e salvare file.
 
+## Nota Architetturale (stato attuale)
+
+Il progetto supporta anche modalita `API PostgreSQL remota`:
+
+- frontend desktop -> backend API HTTP remoto
+- backend API -> Supabase PostgreSQL
+- niente dipendenza da `127.0.0.1:8787` locale in produzione
+
+Guida deploy: [`docs/REMOTE_API_DEPLOY.md`](docs/REMOTE_API_DEPLOY.md)
+
 ## Panoramica
 
 Il progetto oggi copre questi flussi principali:

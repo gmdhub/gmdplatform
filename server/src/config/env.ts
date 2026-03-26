@@ -29,7 +29,10 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('*')
 });
 
-const parsed = envSchema.safeParse(process.env);
+const parsed = envSchema.safeParse({
+  ...process.env,
+  API_PORT: process.env.API_PORT ?? process.env.PORT ?? process.env.API_PORT
+});
 if (!parsed.success) {
   const pretty = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('\n');
   throw new Error(`Invalid environment configuration:\n${pretty}`);

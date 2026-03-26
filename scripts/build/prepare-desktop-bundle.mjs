@@ -3,12 +3,21 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync } from 'no
 import { resolve } from 'node:path';
 
 const projectRoot = process.cwd();
+const desktopApiMode = String(process.env.GMD_DESKTOP_API_MODE ?? 'remote')
+  .trim()
+  .toLowerCase();
 const serverDistDir = resolve(projectRoot, 'server/dist');
 const envOutputPath = resolve(serverDistDir, '.env');
 const serverNodeModulesDir = resolve(projectRoot, 'server/node_modules');
 const serverFastifyPackageJson = resolve(serverNodeModulesDir, 'fastify/package.json');
 const bundledNodeFilename = process.platform === 'win32' ? 'node.exe' : 'node';
 const bundledNodePath = resolve(serverDistDir, 'runtime', bundledNodeFilename);
+
+if (!['embedded', 'remote'].includes(desktopApiMode)) {
+  throw new Error(
+    `[bundle] Valore non valido per GMD_DESKTOP_API_MODE=${desktopApiMode}. Usa embedded o remote.`
+  );
+}
 
 function run(command) {
   execSync(command, { cwd: projectRoot, stdio: 'inherit' });
@@ -106,6 +115,36 @@ function bundleNodeRuntime() {
   console.log(`[bundle] Embedded Node runtime copied: ${sourceNodePath} -> ${bundledNodePath}`);
 }
 
+function isLocalApiBaseUrl(url) {
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(url);
+}
+
+function validateRemoteApiConfiguration() {
+  const configuredApiBaseUrl = String(process.env.VITE_API_BASE_URL ?? '')
+    .trim()
+    .replace(/\/+$/, '');
+
+  if (!configuredApiBaseUrl) {
+    throw new Error(
+      '[bundle] VITE_API_BASE_URL mancante per build remote. Configura l\'URL pubblico del backend API.'
+    );
+  }
+
+  if (!/^https?:\/\//i.test(configuredApiBaseUrl)) {
+    throw new Error(
+      `[bundle] VITE_API_BASE_URL non valido (${configuredApiBaseUrl}). Deve iniziare con http:// o https://`
+    );
+  }
+
+  if (isLocalApiBaseUrl(configuredApiBaseUrl)) {
+    throw new Error(
+      `[bundle] VITE_API_BASE_URL punta a localhost (${configuredApiBaseUrl}) ma la build e' in modalita remote.`
+    );
+  }
+
+  console.log(`[bundle] Remote API mode attivo. API base URL: ${configuredApiBaseUrl}`);
+}
+
 function copyRuntimeEnvFile() {
   const productionEnvFile = resolve(projectRoot, 'server/.env.prod');
   const localEnvFile = resolve(projectRoot, 'server/.env');
@@ -165,8 +204,14 @@ function copyRuntimeEnvFile() {
   console.log(`[bundle] API env file copied: ${selected} -> ${envOutputPath}`);
 }
 
-ensureServerDependencies();
-run('npm run build');
-run('npm --prefix server run build');
-bundleNodeRuntime();
-copyRuntimeEnvFile();
+if (desktopApiMode === 'remote') {
+  validateRemoteApiConfiguration();
+  run('npm run build');
+  console.log('[bundle] Embedded API bundle disattivato.');
+} else {
+  run('npm run build');
+  ensureServerDependencies();
+  run('npm --prefix server run build');
+  bundleNodeRuntime();
+  copyRuntimeEnvFile();
+}

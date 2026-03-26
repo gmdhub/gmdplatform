@@ -25,6 +25,9 @@ function normalizeAppEnvironment(rawValue: string): AppEnvironment {
 const APP_ENV: AppEnvironment = normalizeAppEnvironment(
   String(import.meta.env.VITE_APP_ENV ?? import.meta.env.MODE ?? 'development')
 );
+const BUILD_TIME_API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL ?? '')
+  .trim()
+  .replace(/\/+$/, '');
 
 const API_BASE_OVERRIDE_ALLOWED =
   String(import.meta.env.VITE_ALLOW_API_BASE_OVERRIDE ?? 'false').trim().toLowerCase() === 'true';
@@ -32,7 +35,21 @@ const API_BASE_OVERRIDE_ALLOWED =
 let storageIsolationApplied = false;
 
 function getDefaultApiBaseUrl(): string {
-  return String(import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8787').trim().replace(/\/+$/, '');
+  if (BUILD_TIME_API_BASE_URL) {
+    return BUILD_TIME_API_BASE_URL;
+  }
+
+  if (APP_ENV === 'production') {
+    console.error(
+      'VITE_API_BASE_URL non configurato in build production. Fallback su API locale 127.0.0.1:8787.'
+    );
+  }
+
+  return 'http://127.0.0.1:8787';
+}
+
+export function isLocalApiBaseUrl(baseUrl: string): boolean {
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/i.test(baseUrl.trim());
 }
 
 function removeStorageKey(storage: Storage, key: string): void {

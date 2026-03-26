@@ -1,4 +1,4 @@
-import { getApiBaseUrl } from '$lib/db/config';
+import { getApiBaseUrl, isLocalApiBaseUrl } from '$lib/db/config';
 import { authStore, getAuthSnapshot, type AuthTokens } from '$lib/stores/auth';
 
 export class ApiError extends Error {
@@ -171,8 +171,11 @@ async function request<T>(
     }
 
     const baseUrl = getApiBaseUrl();
+    const errorHint = isLocalApiBaseUrl(baseUrl)
+      ? 'Verifica che il servizio locale sia attivo.'
+      : 'Verifica connessione internet e raggiungibilita del backend remoto.';
     throw new ApiError(
-      `Impossibile raggiungere il backend API su ${baseUrl}. Verifica che il servizio sia attivo.`,
+      `Impossibile raggiungere il backend API su ${baseUrl}. ${errorHint}`,
       0,
       {
         cause: error instanceof Error ? error.message : String(error)

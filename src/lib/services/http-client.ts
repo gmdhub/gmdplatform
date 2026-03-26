@@ -19,6 +19,9 @@ type RequestOptions = {
   auth?: boolean;
   retryAuth?: boolean;
   signal?: AbortSignal;
+  retryNetwork?: boolean;
+  maxNetworkRetries?: number;
+  retryDelayMs?: number;
 };
 
 type JsonLike = Record<string, unknown>;
@@ -72,6 +75,10 @@ async function parseResponseBody(response: Response): Promise<unknown> {
   return text || null;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function refreshAccessToken(): Promise<AuthTokens | null> {
   if (refreshInFlight) {
     return refreshInFlight;
@@ -121,7 +128,12 @@ async function refreshAccessToken(): Promise<AuthTokens | null> {
   }
 }
 
-async function request<T>(path: string, init: RequestInit, options?: RequestOptions): Promise<T> {
+async function request<T>(
+  path: string,
+  init: RequestInit,
+  options?: RequestOptions,
+  networkAttempt = 0
+): Promise<T> {
   const authEnabled = options?.auth !== false;
   const retryAuth = options?.retryAuth !== false;
 
@@ -149,6 +161,15 @@ async function request<T>(path: string, init: RequestInit, options?: RequestOpti
       signal: options?.signal
     });
   } catch (error) {
+    const allowNetworkRetry = options?.retryNetwork !== false;
+    const maxNetworkRetries = options?.maxNetworkRetries ?? 8;
+    const retryDelayMs = options?.retryDelayMs ?? 500;
+
+    if (allowNetworkRetry && networkAttempt < maxNetworkRetries) {
+      await sleep(retryDelayMs);
+      return request<T>(path, init, options, networkAttempt + 1);
+    }
+
     const baseUrl = getApiBaseUrl();
     throw new ApiError(
       `Impossibile raggiungere il backend API su ${baseUrl}. Verifica che il servizio sia attivo.`,

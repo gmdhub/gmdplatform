@@ -3,11 +3,27 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::Manager;
 
 struct ApiProcessState(Mutex<Option<Child>>);
+
+fn log_embedded_api(message: &str) {
+    let log_path = std::env::temp_dir().join("gmd-embedded-api.log");
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let line = format!("[{}] {}\n", timestamp, message);
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+    {
+        let _ = std::io::Write::write_all(&mut file, line.as_bytes());
+    }
+}
 
 #[tauri::command]
 fn convert_docx_to_pdf(docx_path: String, output_pdf_path: Option<String>) -> Result<String, String> {
@@ -215,11 +231,140 @@ fn is_local_api_running() -> bool {
     .is_ok()
 }
 
-fn pick_existing_path(candidates: &[PathBuf]) -> Option<PathBuf> {
-    candidates.iter().find(|candidate| candidate.exists()).cloned()
+fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut unique: Vec<PathBuf> = Vec::new();
+    for path in paths {
+        if !unique.iter().any(|existing| existing == &path) {
+            unique.push(path);
+        }
+    }
+    unique
 }
 
-fn node_command_candidates(resource_dir: &Path) -> Vec<String> {
+fn api_entry_candidates(resource_dir: &Path) -> Vec<PathBuf> {
+    let mut base_dirs: Vec<PathBuf> = vec![resource_dir.to_path_buf()];
+
+    if let Some(parent) = resource_dir.parent() {
+        base_dirs.push(parent.to_path_buf());
+    }
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            base_dirs.push(exe_dir.to_path_buf());
+            if let Some(exe_parent) = exe_dir.parent() {
+                base_dirs.push(exe_parent.to_path_buf());
+            }
+        }
+    }
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    for base in unique_paths(base_dirs) {
+        candidates.push(base.join("server").join("dist").join("index.js"));
+        candidates.push(base.join("_up_").join("server").join("dist").join("index.js"));
+        candidates.push(base.join("resources").join("server").join("dist").join("index.js"));
+        candidates.push(
+            base.join("resources")
+                .join("_up_")
+                .join("server")
+                .join("dist")
+                .join("index.js"),
+        );
+        candidates.push(base.join("dist").join("index.js"));
+        candidates.push(base.join("_up_").join("dist").join("index.js"));
+        candidates.push(base.join("resources").join("dist").join("index.js"));
+        candidates.push(
+            base.join("resources")
+                .join("_up_")
+                .join("dist")
+                .join("index.js"),
+        );
+    }
+
+    unique_paths(candidates)
+}
+
+fn existing_api_entries(resource_dir: &Path) -> Vec<PathBuf> {
+    api_entry_candidates(resource_dir)
+        .into_iter()
+        .filter(|candidate| candidate.exists())
+        .collect()
+}
+
+fn resolve_runtime_env_file(resource_dir: &Path, api_entry: &Path) -> Option<PathBuf> {
+    let env_candidates = vec![
+        api_entry.parent().map(|parent| parent.join(".env")),
+        Some(resource_dir.join("server").join(".env.prod")),
+        Some(resource_dir.join("_up_").join("server").join(".env.prod")),
+        Some(resource_dir.join(".env.prod")),
+        Some(resource_dir.join("_up_").join(".env.prod")),
+    ];
+
+    env_candidates
+        .into_iter()
+        .flatten()
+        .find(|candidate| candidate.exists())
+}
+
+fn process_stdio_for_embedded_api() -> Option<(Stdio, Stdio)> {
+    let log_path = std::env::temp_dir().join("gmd-embedded-api-child.log");
+    let stdout_file = match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        Ok(file) => file,
+        Err(error) => {
+            log_embedded_api(&format!(
+                "Cannot open embedded API child log file {}: {}",
+                path_to_string(&log_path),
+                error
+            ));
+            return None;
+        }
+    };
+
+    let stderr_file = match stdout_file.try_clone() {
+        Ok(file) => file,
+        Err(error) => {
+            log_embedded_api(&format!(
+                "Cannot clone embedded API child log file handle {}: {}",
+                path_to_string(&log_path),
+                error
+            ));
+            return None;
+        }
+    };
+
+    Some((Stdio::from(stdout_file), Stdio::from(stderr_file)))
+}
+
+fn wait_for_local_api_boot(child: &mut Child, timeout: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        if is_local_api_running() {
+            return Ok(());
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return Err(format!("process exited before health check succeeded ({status})"));
+            }
+            Ok(None) => {}
+            Err(error) => {
+                return Err(format!("process status check failed: {error}"));
+            }
+        }
+
+        if Instant::now() >= deadline {
+            return Err("timeout waiting for API port 8787".to_string());
+        }
+
+        std::thread::sleep(Duration::from_millis(120));
+    }
+}
+
+fn node_command_candidates(resource_dir: &Path, api_entry: &Path) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
 
     if let Ok(value) = std::env::var("GMD_NODE_PATH") {
@@ -227,6 +372,11 @@ fn node_command_candidates(resource_dir: &Path) -> Vec<String> {
         if !trimmed.is_empty() {
             candidates.push(trimmed.to_string());
         }
+    }
+
+    if let Some(api_dir) = api_entry.parent() {
+        candidates.push(path_to_string(&api_dir.join("runtime").join("node")));
+        candidates.push(path_to_string(&api_dir.join("runtime").join("node.exe")));
     }
 
     candidates.push(path_to_string(
@@ -274,6 +424,7 @@ fn start_embedded_api_if_needed(app: &tauri::AppHandle) {
     }
 
     if is_local_api_running() {
+        log_embedded_api("API already listening on 127.0.0.1:8787");
         return;
     }
 
@@ -281,69 +432,130 @@ fn start_embedded_api_if_needed(app: &tauri::AppHandle) {
         Ok(path) => path,
         Err(error) => {
             eprintln!("Impossibile risolvere resource_dir per API embedded: {error}");
+            log_embedded_api(&format!("Cannot resolve resource_dir: {error}"));
             return;
         }
     };
 
-    let api_entry_candidates = vec![
-        resource_dir.join("server").join("dist").join("index.js"),
-        resource_dir.join("_up_").join("server").join("dist").join("index.js"),
-        resource_dir.join("dist").join("index.js"),
-        resource_dir.join("_up_").join("dist").join("index.js"),
-    ];
-    let api_entry = match pick_existing_path(&api_entry_candidates) {
-        Some(path) => path,
-        None => {
-            eprintln!(
-                "API embedded non trovata nel bundle. Candidati: {:?}",
-                api_entry_candidates
-            );
-            return;
-        }
-    };
-
-    let env_candidates = vec![
-        api_entry.parent().map(|parent| parent.join(".env")),
-        Some(resource_dir.join("server").join(".env.prod")),
-        Some(resource_dir.join("_up_").join("server").join(".env.prod")),
-        Some(resource_dir.join(".env.prod")),
-        Some(resource_dir.join("_up_").join(".env.prod")),
-    ];
-    let env_file = env_candidates
-        .into_iter()
-        .flatten()
-        .find(|candidate| candidate.exists());
+    let candidate_entries = api_entry_candidates(&resource_dir);
+    let existing_entries = existing_api_entries(&resource_dir);
+    if existing_entries.is_empty() {
+        eprintln!(
+            "API embedded non trovata nel bundle. Candidati: {:?}",
+            candidate_entries
+        );
+        log_embedded_api(&format!(
+            "API entry not found. resource_dir={} candidates={:?}",
+            path_to_string(&resource_dir),
+            candidate_entries
+        ));
+        return;
+    }
 
     let mut errors: Vec<String> = Vec::new();
-    for node_candidate in node_command_candidates(&resource_dir) {
-        let mut command = Command::new(&node_candidate);
-        command
-            .arg(&api_entry)
-            .current_dir(api_entry.parent().unwrap_or(&resource_dir))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+    let max_spawn_attempts = 12usize;
+    let mut spawn_attempts = 0usize;
 
+    'entries: for api_entry in existing_entries {
+        let env_file = resolve_runtime_env_file(&resource_dir, &api_entry);
         if let Some(path) = &env_file {
-            command.env("GMD_ENV_FILE", path);
+            log_embedded_api(&format!(
+                "Trying API entry {} with env file {}",
+                path_to_string(&api_entry),
+                path_to_string(path)
+            ));
+        } else {
+            log_embedded_api(&format!(
+                "Trying API entry {} without explicit env file",
+                path_to_string(&api_entry)
+            ));
         }
 
-        match command.spawn() {
-            Ok(child) => {
-                if let Ok(mut guard) = app.state::<ApiProcessState>().0.lock() {
-                    *guard = Some(child);
-                }
+        for node_candidate in node_command_candidates(&resource_dir, &api_entry) {
+            if spawn_attempts >= max_spawn_attempts {
+                errors.push(format!(
+                    "spawn attempt limit reached ({} attempts)",
+                    max_spawn_attempts
+                ));
+                break 'entries;
+            }
+
+            spawn_attempts += 1;
+            if is_local_api_running() {
+                log_embedded_api("API became available while trying candidates");
                 return;
             }
-            Err(error) => {
-                errors.push(format!("{node_candidate}: {error}"));
+
+            let mut command = Command::new(&node_candidate);
+            command
+                .arg(&api_entry)
+                .current_dir(api_entry.parent().unwrap_or(&resource_dir));
+
+            if let Some((stdout, stderr)) = process_stdio_for_embedded_api() {
+                command.stdout(stdout).stderr(stderr);
+            } else {
+                command.stdout(Stdio::null()).stderr(Stdio::null());
+            }
+
+            if let Some(path) = &env_file {
+                command.env("GMD_ENV_FILE", path);
+            }
+
+            command.env("GMD_EMBEDDED_API", "1");
+            command.env(
+                "GMD_EMBEDDED_API_LOG_PATH",
+                std::env::temp_dir().join("gmd-embedded-api-child.log"),
+            );
+
+            match command.spawn() {
+                Ok(mut child) => match wait_for_local_api_boot(&mut child, Duration::from_millis(1800)) {
+                    Ok(()) => {
+                        if let Ok(mut guard) = app.state::<ApiProcessState>().0.lock() {
+                            *guard = Some(child);
+                        }
+                        log_embedded_api(&format!(
+                            "Embedded API ready using node='{}' entry='{}'",
+                            node_candidate,
+                            path_to_string(&api_entry)
+                        ));
+                        return;
+                    }
+                    Err(reason) => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        let line = format!(
+                            "node='{}' entry='{}': {}",
+                            node_candidate,
+                            path_to_string(&api_entry),
+                            reason
+                        );
+                        errors.push(line.clone());
+                        log_embedded_api(&format!("Embedded API attempt failed: {line}"));
+                    }
+                },
+                Err(error) => {
+                    let line = format!(
+                        "node='{}' entry='{}': spawn error: {}",
+                        node_candidate,
+                        path_to_string(&api_entry),
+                        error
+                    );
+                    errors.push(line.clone());
+                    log_embedded_api(&format!("Embedded API spawn error: {line}"));
+                }
             }
         }
     }
 
     eprintln!(
-        "Errore avvio API embedded: impossibile trovare/eseguire Node runtime. Tentativi: {}",
+        "Errore avvio API embedded: nessuna combinazione node/entry valida. Tentativi: {}",
         errors.join(" | ")
     );
+    log_embedded_api(&format!(
+        "Failed to bootstrap embedded API. attempts={} details={}",
+        spawn_attempts,
+        errors.join(" | ")
+    ));
 }
 
 #[tauri::command]

@@ -14,6 +14,10 @@ function run(command) {
   execSync(command, { cwd: projectRoot, stdio: 'inherit' });
 }
 
+function runCapture(command) {
+  return String(execSync(command, { cwd: projectRoot, encoding: 'utf8' })).trim();
+}
+
 function ensureServerDependencies() {
   if (existsSync(serverNodeModulesDir) && existsSync(serverFastifyPackageJson)) {
     return;
@@ -23,13 +27,83 @@ function ensureServerDependencies() {
   run('npm --prefix server ci');
 }
 
+function listDynamicLibraries(binaryPath) {
+  if (process.platform !== 'darwin') {
+    return [];
+  }
+
+  try {
+    const output = runCapture(`otool -L "${binaryPath}"`);
+    return output
+      .split('\n')
+      .slice(1)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.split(' ')[0]);
+  } catch {
+    return [];
+  }
+}
+
+function hasHomebrewLinkedLibraries(binaryPath) {
+  const libs = listDynamicLibraries(binaryPath);
+  return libs.some(
+    (libPath) =>
+      libPath.startsWith('/opt/homebrew/') ||
+      libPath.startsWith('/usr/local/opt/') ||
+      libPath.startsWith('/usr/local/Cellar/')
+  );
+}
+
+function resolvePortableNodeBinary() {
+  if (process.platform !== 'darwin') {
+    return process.execPath;
+  }
+
+  if (!hasHomebrewLinkedLibraries(process.execPath)) {
+    return process.execPath;
+  }
+
+  const nodeVersion = process.version.replace(/^v/, '');
+  const arch = process.arch === 'arm64' ? 'arm64' : process.arch === 'x64' ? 'x64' : null;
+  if (!arch) {
+    throw new Error(`[bundle] Architettura Node non supportata per runtime portabile: ${process.arch}`);
+  }
+
+  const runtimeDir = resolve(serverDistDir, 'runtime');
+  const archiveName = `node-v${nodeVersion}-darwin-${arch}.tar.gz`;
+  const archivePath = resolve(runtimeDir, archiveName);
+  const extractedDir = resolve(runtimeDir, `node-v${nodeVersion}-darwin-${arch}`);
+  const extractedNodePath = resolve(extractedDir, 'bin', 'node');
+  const downloadUrl = `https://nodejs.org/dist/v${nodeVersion}/${archiveName}`;
+
+  if (!existsSync(extractedNodePath)) {
+    console.warn(
+      `[bundle] Node locale non portabile (link Homebrew). Scarico runtime ufficiale da ${downloadUrl}`
+    );
+    run(`curl -L --fail -o "${archivePath}" "${downloadUrl}"`);
+    run(`tar -xzf "${archivePath}" -C "${runtimeDir}"`);
+  }
+
+  if (!existsSync(extractedNodePath)) {
+    throw new Error(`[bundle] Runtime Node portabile non trovato dopo estrazione: ${extractedNodePath}`);
+  }
+
+  if (hasHomebrewLinkedLibraries(extractedNodePath)) {
+    throw new Error('[bundle] Runtime Node scaricato non è portabile (dipendenze Homebrew rilevate).');
+  }
+
+  return extractedNodePath;
+}
+
 function bundleNodeRuntime() {
   mkdirSync(resolve(serverDistDir, 'runtime'), { recursive: true });
-  copyFileSync(process.execPath, bundledNodePath);
+  const sourceNodePath = resolvePortableNodeBinary();
+  copyFileSync(sourceNodePath, bundledNodePath);
   if (process.platform !== 'win32') {
     chmodSync(bundledNodePath, 0o755);
   }
-  console.log(`[bundle] Embedded Node runtime copied: ${process.execPath} -> ${bundledNodePath}`);
+  console.log(`[bundle] Embedded Node runtime copied: ${sourceNodePath} -> ${bundledNodePath}`);
 }
 
 function copyRuntimeEnvFile() {

@@ -231,23 +231,6 @@ fn is_local_api_running() -> bool {
     .is_ok()
 }
 
-fn is_local_api_base_url(base_url: &str) -> bool {
-    let normalized = base_url.trim().to_ascii_lowercase();
-    normalized.starts_with("http://127.0.0.1")
-        || normalized.starts_with("https://127.0.0.1")
-        || normalized.starts_with("http://localhost")
-        || normalized.starts_with("https://localhost")
-}
-
-fn should_start_embedded_api() -> bool {
-    let configured_api_base_url = option_env!("VITE_API_BASE_URL").unwrap_or("");
-    if configured_api_base_url.trim().is_empty() {
-        return true;
-    }
-
-    is_local_api_base_url(configured_api_base_url)
-}
-
 fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut unique: Vec<PathBuf> = Vec::new();
     for path in paths {
@@ -437,13 +420,6 @@ fn node_command_candidates(resource_dir: &Path, api_entry: &Path) -> Vec<String>
 
 fn start_embedded_api_if_needed(app: &tauri::AppHandle) {
     if cfg!(debug_assertions) {
-        return;
-    }
-
-    if !should_start_embedded_api() {
-        log_embedded_api(
-            "Embedded API startup skipped: build configured for remote API base URL."
-        );
         return;
     }
 

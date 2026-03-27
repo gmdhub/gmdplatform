@@ -5,7 +5,7 @@
   import { authStore } from '$lib/stores/auth';
   import { ambulatorioStore } from '$lib/stores/ambulatorio';
   import { getAmbulatorioById } from '$lib/db/ambulatori';
-  import { getDatabase } from '$lib/db/schema';
+  import { initDatabase } from '$lib/db/schema';
   import AppLayout from '$lib/components/AppLayout.svelte';
   import ToastContainer from '$lib/components/ToastContainer.svelte';
 
@@ -17,7 +17,7 @@
   async function waitForDatabase(maxAttempts = 20): Promise<boolean> {
     for (let i = 0; i < maxAttempts; i++) {
       try {
-        getDatabase();
+        await initDatabase();
         return true;
       } catch (error) {
         await new Promise(resolve => setTimeout(resolve, 100));

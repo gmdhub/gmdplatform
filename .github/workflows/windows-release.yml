@@ -89,8 +89,6 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       VITE_APP_ENV: production
-      GMD_DESKTOP_API_MODE: remote
-      VITE_API_BASE_URL: ${{ secrets.PROD_API_BASE_URL }}
 
     steps:
       - name: Checkout
@@ -108,23 +106,36 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install server dependencies
+        run: npm --prefix server ci
+
+      - name: Generate production API env file
+        shell: bash
+        run: |
+          if [[ -z "${{ secrets.PROD_API_JWT_SECRET }}" || -z "${{ secrets.PROD_SUPABASE_DB_URL }}" || -z "${{ secrets.PROD_SUPABASE_PROJECT_REF }}" ]]; then
+            echo "Missing required production secrets: PROD_API_JWT_SECRET / PROD_SUPABASE_DB_URL / PROD_SUPABASE_PROJECT_REF"
+            exit 1
+          fi
+
+          cat > server/.env.prod <<EOF
+          APP_ENV=production
+          API_HOST=0.0.0.0
+          API_PORT=8787
+          ACCESS_TOKEN_TTL_SECONDS=900
+          REFRESH_TOKEN_TTL_SECONDS=2592000
+          CORS_ORIGIN=*
+          ALLOW_DEV_PROD_DB=NO
+          API_JWT_SECRET=${{ secrets.PROD_API_JWT_SECRET }}
+          SUPABASE_DB_URL=${{ secrets.PROD_SUPABASE_DB_URL }}
+          SUPABASE_PROJECT_REF_EXPECTED=${{ secrets.PROD_SUPABASE_PROJECT_REF }}
+          SUPABASE_PROD_PROJECT_REF=${{ secrets.PROD_SUPABASE_PROJECT_REF }}
+          EOF
+
       - name: Validate frontend env (production only)
         shell: bash
         run: |
           if [[ "${VITE_APP_ENV}" == "development" ]]; then
             echo "Build bloccata: VITE_APP_ENV=development non consentito per release."
-            exit 1
-          fi
-          if [[ -z "${VITE_API_BASE_URL}" ]]; then
-            echo "Build bloccata: secret PROD_API_BASE_URL mancante."
-            exit 1
-          fi
-          if [[ ! "${VITE_API_BASE_URL}" =~ ^https:// ]]; then
-            echo "Build bloccata: VITE_API_BASE_URL deve usare HTTPS (${VITE_API_BASE_URL})."
-            exit 1
-          fi
-          if [[ "${VITE_API_BASE_URL}" =~ ^https?://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|$) ]]; then
-            echo "Build bloccata: VITE_API_BASE_URL punta a localhost (${VITE_API_BASE_URL})."
             exit 1
           fi
 
@@ -186,8 +197,6 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       VITE_APP_ENV: production
-      GMD_DESKTOP_API_MODE: remote
-      VITE_API_BASE_URL: ${{ secrets.PROD_API_BASE_URL }}
 
     steps:
       - name: Checkout
@@ -205,23 +214,36 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install server dependencies
+        run: npm --prefix server ci
+
+      - name: Generate production API env file
+        shell: bash
+        run: |
+          if [[ -z "${{ secrets.PROD_API_JWT_SECRET }}" || -z "${{ secrets.PROD_SUPABASE_DB_URL }}" || -z "${{ secrets.PROD_SUPABASE_PROJECT_REF }}" ]]; then
+            echo "Missing required production secrets: PROD_API_JWT_SECRET / PROD_SUPABASE_DB_URL / PROD_SUPABASE_PROJECT_REF"
+            exit 1
+          fi
+
+          cat > server/.env.prod <<EOF
+          APP_ENV=production
+          API_HOST=0.0.0.0
+          API_PORT=8787
+          ACCESS_TOKEN_TTL_SECONDS=900
+          REFRESH_TOKEN_TTL_SECONDS=2592000
+          CORS_ORIGIN=*
+          ALLOW_DEV_PROD_DB=NO
+          API_JWT_SECRET=${{ secrets.PROD_API_JWT_SECRET }}
+          SUPABASE_DB_URL=${{ secrets.PROD_SUPABASE_DB_URL }}
+          SUPABASE_PROJECT_REF_EXPECTED=${{ secrets.PROD_SUPABASE_PROJECT_REF }}
+          SUPABASE_PROD_PROJECT_REF=${{ secrets.PROD_SUPABASE_PROJECT_REF }}
+          EOF
+
       - name: Validate frontend env (production only)
         shell: bash
         run: |
           if [[ "${VITE_APP_ENV}" == "development" ]]; then
             echo "Build bloccata: VITE_APP_ENV=development non consentito per release."
-            exit 1
-          fi
-          if [[ -z "${VITE_API_BASE_URL}" ]]; then
-            echo "Build bloccata: secret PROD_API_BASE_URL mancante."
-            exit 1
-          fi
-          if [[ ! "${VITE_API_BASE_URL}" =~ ^https:// ]]; then
-            echo "Build bloccata: VITE_API_BASE_URL deve usare HTTPS (${VITE_API_BASE_URL})."
-            exit 1
-          fi
-          if [[ "${VITE_API_BASE_URL}" =~ ^https?://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|$) ]]; then
-            echo "Build bloccata: VITE_API_BASE_URL punta a localhost (${VITE_API_BASE_URL})."
             exit 1
           fi
 

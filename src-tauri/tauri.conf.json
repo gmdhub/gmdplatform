@@ -78,7 +78,10 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "../src/lib/templates/template_dislip.docx"
+      "../src/lib/templates/template_dislip.docx",
+      "../server/dist",
+      "../server/package.json",
+      "../server/node_modules"
     ],
     "icon": [
       "icons/32x32.png",

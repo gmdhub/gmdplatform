@@ -15,7 +15,8 @@ const appEnvSchema = z.enum(['development', 'production', 'test']);
 const envSchema = z.object({
   APP_ENV: appEnvSchema.default('development'),
   API_HOST: z.string().default('0.0.0.0'),
-  API_PORT: z.coerce.number().int().positive().default(8787),
+  API_PORT: z.coerce.number().int().positive().optional(),
+  PORT: z.coerce.number().int().positive().optional(),
   API_JWT_SECRET: z.string().min(32),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(60 * 60 * 24 * 30),
@@ -34,6 +35,8 @@ if (!parsed.success) {
   const pretty = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('\n');
   throw new Error(`Invalid environment configuration:\n${pretty}`);
 }
+
+const apiPort = parsed.data.API_PORT ?? parsed.data.PORT ?? 8787;
 
 const actualProjectRef = extractSupabaseProjectRef(parsed.data.SUPABASE_DB_URL);
 if (!actualProjectRef) {
@@ -64,6 +67,7 @@ if (
 
 export const env = {
   ...parsed.data,
+  API_PORT: apiPort,
   SUPABASE_PROJECT_REF_ACTUAL: normalizedActual,
   SUPABASE_PROJECT_REF_EXPECTED: expectedProjectRef,
   SUPABASE_PROD_PROJECT_REF: prodProjectRef

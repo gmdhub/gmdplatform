@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: gmd-platform-api
+    env: docker
+    plan: starter
+    rootDir: .
+    dockerfilePath: ./server/Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: ACCESS_TOKEN_TTL_SECONDS
+        value: "900"
+      - key: REFRESH_TOKEN_TTL_SECONDS
+        value: "2592000"
+      - key: ALLOW_DEV_PROD_DB
+        value: "NO"
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: API_JWT_SECRET
+        sync: false
+      - key: SUPABASE_DB_URL
+        sync: false
+      - key: SUPABASE_PROJECT_REF_EXPECTED
+        sync: false
+      - key: SUPABASE_PROD_PROJECT_REF
+        sync: false

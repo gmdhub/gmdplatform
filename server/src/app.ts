@@ -30,12 +30,25 @@ export async function buildApp() {
   app.setErrorHandler((error, request, reply) => {
     const maybeError = error as Error & { statusCode?: number };
     request.log.error(error);
+    const message = maybeError.message || '';
+    const isDatabaseConnectivityError =
+      message.includes('Connection terminated due to connection timeout') ||
+      message.includes('Connection terminated unexpectedly') ||
+      message.includes('ETIMEDOUT') ||
+      message.includes('ECONNRESET');
     const statusCode =
-      typeof maybeError.statusCode === 'number' && maybeError.statusCode >= 400
+      isDatabaseConnectivityError
+        ? 503
+        : typeof maybeError.statusCode === 'number' && maybeError.statusCode >= 400
         ? maybeError.statusCode
         : 500;
+    const publicErrorMessage = isDatabaseConnectivityError
+      ? 'Database Supabase non raggiungibile dalla macchina corrente'
+      : statusCode === 500
+      ? 'Internal server error'
+      : maybeError.message;
     reply.code(statusCode).send({
-      error: statusCode === 500 ? 'Internal server error' : maybeError.message,
+      error: publicErrorMessage,
       requestId: request.id
     });
   });

@@ -25,6 +25,19 @@ fn log_embedded_api(message: &str) {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn sanitize_windows_path(input: &str) -> String {
+    if let Some(stripped) = input.strip_prefix(r"\\?\") {
+        return stripped.to_string();
+    }
+    input.to_string()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn sanitize_windows_path(input: &str) -> String {
+    input.to_string()
+}
+
 #[tauri::command]
 fn convert_docx_to_pdf(docx_path: String, output_pdf_path: Option<String>) -> Result<String, String> {
     let input_path = PathBuf::from(docx_path.trim());
@@ -375,41 +388,47 @@ fn node_command_candidates(resource_dir: &Path, api_entry: &Path) -> Vec<String>
     }
 
     if let Some(api_dir) = api_entry.parent() {
-        candidates.push(path_to_string(&api_dir.join("runtime").join("node")));
-        candidates.push(path_to_string(&api_dir.join("runtime").join("node.exe")));
+        candidates.push(sanitize_windows_path(&path_to_string(
+            &api_dir.join("runtime").join("node"),
+        )));
+        candidates.push(sanitize_windows_path(&path_to_string(
+            &api_dir.join("runtime").join("node.exe"),
+        )));
     }
 
-    candidates.push(path_to_string(
+    candidates.push(sanitize_windows_path(&path_to_string(
         &resource_dir
             .join("server")
             .join("dist")
             .join("runtime")
             .join("node"),
-    ));
-    candidates.push(path_to_string(
+    )));
+    candidates.push(sanitize_windows_path(&path_to_string(
         &resource_dir
             .join("_up_")
             .join("server")
             .join("dist")
             .join("runtime")
             .join("node"),
-    ));
-    candidates.push(path_to_string(
+    )));
+    candidates.push(sanitize_windows_path(&path_to_string(
         &resource_dir
             .join("server")
             .join("dist")
             .join("runtime")
             .join("node.exe"),
-    ));
-    candidates.push(path_to_string(
+    )));
+    candidates.push(sanitize_windows_path(&path_to_string(
         &resource_dir
             .join("_up_")
             .join("server")
             .join("dist")
             .join("runtime")
             .join("node.exe"),
-    ));
-    candidates.push(path_to_string(&resource_dir.join("node").join("bin").join("node")));
+    )));
+    candidates.push(sanitize_windows_path(&path_to_string(
+        &resource_dir.join("node").join("bin").join("node"),
+    )));
     candidates.push("/opt/homebrew/bin/node".to_string());
     candidates.push("/usr/local/bin/node".to_string());
     candidates.push("/usr/bin/node".to_string());
@@ -457,7 +476,16 @@ fn start_embedded_api_if_needed(app: &tauri::AppHandle) {
     let mut spawn_attempts = 0usize;
 
     'entries: for api_entry in existing_entries {
+        let api_entry_for_spawn = sanitize_windows_path(&path_to_string(&api_entry));
+        let api_entry_parent_for_spawn = api_entry
+            .parent()
+            .map(path_to_string)
+            .map(|value| sanitize_windows_path(&value))
+            .unwrap_or_else(|| sanitize_windows_path(&path_to_string(&resource_dir)));
         let env_file = resolve_runtime_env_file(&resource_dir, &api_entry);
+        let env_file_for_spawn = env_file
+            .as_ref()
+            .map(|value| sanitize_windows_path(&path_to_string(value.as_path())));
         if let Some(path) = &env_file {
             log_embedded_api(&format!(
                 "Trying API entry {} with env file {}",
@@ -488,8 +516,8 @@ fn start_embedded_api_if_needed(app: &tauri::AppHandle) {
 
             let mut command = Command::new(&node_candidate);
             command
-                .arg(&api_entry)
-                .current_dir(api_entry.parent().unwrap_or(&resource_dir));
+                .arg(&api_entry_for_spawn)
+                .current_dir(&api_entry_parent_for_spawn);
 
             if let Some((stdout, stderr)) = process_stdio_for_embedded_api() {
                 command.stdout(stdout).stderr(stderr);
@@ -497,7 +525,7 @@ fn start_embedded_api_if_needed(app: &tauri::AppHandle) {
                 command.stdout(Stdio::null()).stderr(Stdio::null());
             }
 
-            if let Some(path) = &env_file {
+            if let Some(path) = &env_file_for_spawn {
                 command.env("GMD_ENV_FILE", path);
             }
 

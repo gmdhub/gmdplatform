@@ -114,15 +114,14 @@ jobs:
             exit 1
           fi
 
-      - name: Build Tauri (Windows MSI + NSIS)
-        run: npm run tauri build -- --bundles msi,nsis
+      - name: Build Tauri (Windows NSIS .exe only)
+        run: npm run tauri build -- --bundles nsis
 
       - name: Collect Windows bundles
         id: bundles
         shell: pwsh
         run: |
           $patterns = @(
-            "src-tauri/target/release/bundle/msi/*.msi",
             "src-tauri/target/release/bundle/nsis/*.exe"
           )
           $files = @()
@@ -131,7 +130,7 @@ jobs:
           }
 
           if (-not $files -or $files.Count -eq 0) {
-            Write-Error "Nessun bundle Windows trovato (MSI/NSIS)."
+            Write-Error "Nessun bundle Windows trovato (NSIS .exe)."
             exit 1
           }
 
@@ -160,7 +159,6 @@ jobs:
         with:
           name: windows-bundles-${{ needs.prepare-release.outputs.tag }}
           path: |
-            src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
 

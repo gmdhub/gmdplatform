@@ -766,19 +766,22 @@
     showNewPatientModal = false;
   }
 
-  function handlePatientDetailsSubmit(event: CustomEvent<Paziente>) {
+  async function handlePatientDetailsSubmit(event: CustomEvent<Paziente>) {
     const updatedPaziente = event.detail;
     if (!updatedPaziente || !Number.isInteger(updatedPaziente.id)) {
       toastStore.show('error', 'Dati anagrafici aggiornati non validi');
       return;
     }
 
+    await loadPazienti();
+
+    const refreshedPaziente = pazienti.find((paziente) => paziente.id === updatedPaziente.id) ?? updatedPaziente;
     pazienti = pazienti.map((paziente) =>
-      paziente.id === updatedPaziente.id ? { ...paziente, ...updatedPaziente } : paziente
+      paziente.id === refreshedPaziente.id ? { ...paziente, ...refreshedPaziente } : paziente
     );
 
-    if (selectedPaziente?.id === updatedPaziente.id) {
-      selectedPaziente = { ...selectedPaziente, ...updatedPaziente };
+    if (selectedPaziente?.id === refreshedPaziente.id) {
+      selectedPaziente = { ...selectedPaziente, ...refreshedPaziente };
     }
 
     showPatientDetailsModal = false;
@@ -1592,6 +1595,7 @@
   <PazienteFormModal
     bind:isOpen={showPatientDetailsModal}
     paziente={selectedPaziente}
+    editPatientId={selectedPaziente.id}
     {ambulatorioId}
     modalTitle="Dettaglio anagrafico"
     submitButtonLabel="Modifica anagrafica"

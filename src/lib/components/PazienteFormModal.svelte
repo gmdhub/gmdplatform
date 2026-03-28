@@ -13,6 +13,7 @@
 
   export let isOpen = false;
   export let paziente: Paziente | null = null;
+  export let editPatientId: number | null = null;
   export let ambulatorioId: number;
   export let modalTitle: string | undefined = undefined;
   export let submitButtonLabel: string | undefined = undefined;
@@ -36,6 +37,9 @@
   let formErrors: Record<string, string> = {};
   let initialFormSnapshot = '';
   let isFormDirty = false;
+  let isSubmitting = false;
+  let resolvedEditPatientId: number | null = null;
+  let isEditMode = false;
   let resolvedTitle = '';
   let resolvedSubmitButtonLabel = '';
   let canSubmit = true;
@@ -79,8 +83,15 @@
     });
   }
 
-  $: resolvedTitle = modalTitle || (paziente ? 'Modifica Paziente' : 'Nuovo Paziente');
-  $: resolvedSubmitButtonLabel = submitButtonLabel || (paziente ? 'Salva Modifiche' : 'Crea Paziente');
+  $: resolvedEditPatientId =
+    Number.isInteger(editPatientId) && (editPatientId as number) > 0
+      ? (editPatientId as number)
+      : paziente && Number.isInteger(paziente.id) && paziente.id > 0
+        ? paziente.id
+        : null;
+  $: isEditMode = resolvedEditPatientId !== null;
+  $: resolvedTitle = modalTitle || (isEditMode ? 'Modifica Paziente' : 'Nuovo Paziente');
+  $: resolvedSubmitButtonLabel = submitButtonLabel || (isEditMode ? 'Salva Modifiche' : 'Crea Paziente');
   $: isFormDirty = isOpen && initialFormSnapshot !== serializeFormSnapshot(formData);
   $: canSubmit = !requireChangesForSubmit || isFormDirty;
 
@@ -105,12 +116,14 @@
   $: {
     if (!isOpen) {
       loadedFormContextKey = '';
+      isSubmitting = false;
     } else {
-      const contextKey = paziente ? `edit:${paziente.id}` : `new:${ambulatorioId}`;
+      const contextKey = isEditMode ? `edit:${resolvedEditPatientId}` : `new:${ambulatorioId}`;
       if (loadedFormContextKey !== contextKey) {
         loadedFormContextKey = contextKey;
+        isSubmitting = false;
 
-        if (paziente) {
+        if (isEditMode && paziente) {
           nessunaEsenzione = !paziente.esenzioni || paziente.esenzioni.toLowerCase() === 'nessuno';
           formData = {
             ambulatorio_id: paziente.ambulatorio_id,
@@ -194,17 +207,18 @@
   }
 
   async function handleSubmit() {
-    if (!canSubmit) return;
+    if (!canSubmit || isSubmitting) return;
     if (!validateForm()) {
       toastStore.show('error', 'Correggi i campi evidenziati per continuare');
       return;
     }
 
+    isSubmitting = true;
     try {
       let newPaziente;
-      if (paziente) {
-        await updatePaziente({ ...formData, id: paziente.id });
-        newPaziente = { ...paziente, ...formData };
+      if (isEditMode && resolvedEditPatientId !== null) {
+        await updatePaziente({ ...formData, id: resolvedEditPatientId });
+        newPaziente = { ...(paziente ?? {}), ...formData, id: resolvedEditPatientId };
       } else {
         const id = await createPaziente(formData);
         newPaziente = { ...formData, id };
@@ -216,6 +230,8 @@
       const message = getErrorMessage(error);
       toastStore.show('error', `Errore salvataggio paziente: ${message}`);
       dispatch('error', { message, error });
+    } finally {
+      isSubmitting = false;
     }
   }
 
@@ -397,11 +413,11 @@
   </form>
 
   <svelte:fragment slot="footer">
-    <Button variant="secondary" on:click={handleClose}>
+    <Button variant="secondary" on:click={handleClose} disabled={isSubmitting}>
       Annulla
     </Button>
-    <Button variant="primary" on:click={handleSubmit} disabled={!canSubmit}>
-      {resolvedSubmitButtonLabel}
+    <Button variant="primary" on:click={handleSubmit} disabled={!canSubmit || isSubmitting}>
+      {isSubmitting ? 'Salvataggio...' : resolvedSubmitButtonLabel}
     </Button>
   </svelte:fragment>
 </Modal>

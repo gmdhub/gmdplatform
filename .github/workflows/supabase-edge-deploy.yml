@@ -64,9 +64,9 @@ jobs:
             CORS_ORIGIN=* \
             ALLOW_DEV_PROD_DB=NO \
             API_JWT_SECRET="$API_JWT_SECRET" \
-            SUPABASE_DB_URL="$SUPABASE_DB_URL" \
-            SUPABASE_PROJECT_REF_EXPECTED="$PROJECT_REF" \
-            SUPABASE_PROD_PROJECT_REF="$SUPABASE_PROD_PROJECT_REF" \
+            GMD_SUPABASE_DB_URL="$SUPABASE_DB_URL" \
+            GMD_SUPABASE_PROJECT_REF_EXPECTED="$PROJECT_REF" \
+            GMD_SUPABASE_PROD_PROJECT_REF="$SUPABASE_PROD_PROJECT_REF" \
             --project-ref "$PROJECT_REF"
 
       - name: Deploy gmd-api (dev)
@@ -120,9 +120,9 @@ jobs:
             CORS_ORIGIN=* \
             ALLOW_DEV_PROD_DB=NO \
             API_JWT_SECRET="$API_JWT_SECRET" \
-            SUPABASE_DB_URL="$SUPABASE_DB_URL" \
-            SUPABASE_PROJECT_REF_EXPECTED="$PROJECT_REF" \
-            SUPABASE_PROD_PROJECT_REF="$PROJECT_REF" \
+            GMD_SUPABASE_DB_URL="$SUPABASE_DB_URL" \
+            GMD_SUPABASE_PROJECT_REF_EXPECTED="$PROJECT_REF" \
+            GMD_SUPABASE_PROD_PROJECT_REF="$PROJECT_REF" \
             --project-ref "$PROJECT_REF"
 
       - name: Deploy gmd-api (prod)

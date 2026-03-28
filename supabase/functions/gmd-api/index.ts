@@ -70,12 +70,35 @@ function getRemoteAddress(request: Request): string {
   return first || '127.0.0.1';
 }
 
+function buildPreflightResponse(request: Request): Response {
+  const origin = request.headers.get('origin') ?? '*';
+  const allowHeaders =
+    request.headers.get('access-control-request-headers') ?? 'content-type,authorization';
+
+  const headers = new Headers();
+  headers.set('access-control-allow-origin', origin);
+  headers.set('access-control-allow-credentials', 'true');
+  headers.set('access-control-allow-methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  headers.set('access-control-allow-headers', allowHeaders);
+  headers.set('access-control-max-age', '86400');
+  headers.set('vary', 'Origin');
+
+  return new Response(null, {
+    status: 204,
+    headers
+  });
+}
+
 Deno.serve(async (request) => {
+  if (request.method.toUpperCase() === 'OPTIONS') {
+    return buildPreflightResponse(request);
+  }
+
   const app = await getFastifyApp();
   const url = new URL(request.url);
   const normalizedPath = normalizePath(url.pathname);
   const injectUrl = `${normalizedPath}${url.search}`;
-  const isPayloadMethod = !['GET', 'HEAD'].includes(request.method.toUpperCase());
+  const isPayloadMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method.toUpperCase());
   const payload = isPayloadMethod ? await request.text() : undefined;
 
   const injected = await app.inject({

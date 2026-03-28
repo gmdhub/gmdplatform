@@ -1,0 +1,4 @@
+# Supabase local/deploy configuration for Edge Functions
+
+[functions.gmd-api]
+verify_jwt = false

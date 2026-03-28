@@ -14,6 +14,22 @@ type LoginResponse = {
     scopeAmbulatori?: number[];
   };
   tokens: AuthTokens;
+  password_rotation_required?: boolean;
+};
+
+type RotatePasswordResponse = {
+  user: {
+    id: number;
+    internal_id?: string;
+    username: string;
+    nome: string;
+    cognome: string;
+    role: 'admin' | 'medico' | 'infermiere';
+    roles?: string[];
+    scopeAmbulatori?: number[];
+  };
+  tokens: AuthTokens;
+  password_rotation_required?: boolean;
 };
 
 function mapUser(row: Partial<User> & { [key: string]: unknown }): User {
@@ -28,13 +44,40 @@ function mapUser(row: Partial<User> & { [key: string]: unknown }): User {
   };
 }
 
-export async function loginWithApi(username: string, password: string): Promise<{ user: User; tokens: AuthTokens } | null> {
+export async function loginWithApi(username: string, password: string): Promise<{
+  user: User;
+  tokens: AuthTokens;
+  passwordRotationRequired: boolean;
+} | null> {
   const payload = await apiPost<LoginResponse | null>('/auth/login', {
     username,
     password,
     deviceInfo: 'tauri-desktop'
   }, {
     auth: false
+  });
+
+  if (!payload || !payload.user || !payload.tokens) {
+    return null;
+  }
+
+  return {
+    user: mapUser(payload.user as Partial<User> & Record<string, unknown>),
+    tokens: payload.tokens,
+    passwordRotationRequired: Boolean(payload.password_rotation_required)
+  };
+}
+
+export async function rotatePasswordFromApi(
+  currentPassword: string,
+  newPassword: string
+): Promise<{
+  user: User;
+  tokens: AuthTokens;
+} | null> {
+  const payload = await apiPost<RotatePasswordResponse | null>('/auth/rotate-password', {
+    currentPassword,
+    newPassword
   });
 
   if (!payload || !payload.user || !payload.tokens) {

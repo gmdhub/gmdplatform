@@ -1,22 +1,78 @@
-import dotenv from 'dotenv';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { extractSupabaseProjectRef } from './supabase-ref.js';
 
-const explicitEnvFile = process.env.GMD_ENV_FILE?.trim();
-if (explicitEnvFile) {
-  dotenv.config({ path: resolve(explicitEnvFile), override: false });
-} else {
-  dotenv.config();
+type RuntimeEnv = Record<string, string | undefined>;
+
+function getProcessEnv(): RuntimeEnv | null {
+  const maybeProcess = (globalThis as { process?: { env?: RuntimeEnv } }).process;
+  if (!maybeProcess?.env) {
+    return null;
+  }
+  return maybeProcess.env;
 }
+
+function getDenoEnvObject(): RuntimeEnv | null {
+  const denoGlobal = globalThis as unknown as {
+    Deno?: {
+      env?: {
+        toObject?: () => Record<string, string>;
+      };
+    };
+  };
+
+  const toObject = denoGlobal.Deno?.env?.toObject;
+  if (typeof toObject !== 'function') {
+    return null;
+  }
+
+  try {
+    return toObject();
+  } catch {
+    return null;
+  }
+}
+
+async function loadDotenvIfAvailable(processEnv: RuntimeEnv): Promise<void> {
+  const explicitEnvFile = processEnv.GMD_ENV_FILE?.trim();
+
+  try {
+    const dotenv = await import('dotenv');
+    if (explicitEnvFile) {
+      dotenv.default.config({ path: resolve(explicitEnvFile), override: false });
+    } else {
+      dotenv.default.config();
+    }
+  } catch {
+    // dotenv non disponibile (runtime Edge): uso solo variabili runtime
+  }
+}
+
+const processEnv = getProcessEnv();
+if (processEnv) {
+  await loadDotenvIfAvailable(processEnv);
+}
+
+const runtimeEnv: RuntimeEnv = {
+  ...(getDenoEnvObject() ?? {}),
+  ...(getProcessEnv() ?? {})
+};
+
+const runtimeEnvWithAliases: RuntimeEnv = {
+  ...runtimeEnv,
+  SUPABASE_DB_URL: runtimeEnv.SUPABASE_DB_URL ?? runtimeEnv.GMD_SUPABASE_DB_URL,
+  SUPABASE_PROJECT_REF_EXPECTED:
+    runtimeEnv.SUPABASE_PROJECT_REF_EXPECTED ?? runtimeEnv.GMD_SUPABASE_PROJECT_REF_EXPECTED,
+  SUPABASE_PROD_PROJECT_REF:
+    runtimeEnv.SUPABASE_PROD_PROJECT_REF ?? runtimeEnv.GMD_SUPABASE_PROD_PROJECT_REF
+};
 
 const appEnvSchema = z.enum(['development', 'production', 'test']);
 
 const envSchema = z.object({
   APP_ENV: appEnvSchema.default('development'),
   API_HOST: z.string().default('0.0.0.0'),
-  API_PORT: z.coerce.number().int().positive().optional(),
-  PORT: z.coerce.number().int().positive().optional(),
+  API_PORT: z.coerce.number().int().positive().default(8787),
   API_JWT_SECRET: z.string().min(32),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(60 * 60 * 24 * 30),
@@ -30,13 +86,11 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('*')
 });
 
-const parsed = envSchema.safeParse(process.env);
+const parsed = envSchema.safeParse(runtimeEnvWithAliases);
 if (!parsed.success) {
   const pretty = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('\n');
   throw new Error(`Invalid environment configuration:\n${pretty}`);
 }
-
-const apiPort = parsed.data.API_PORT ?? parsed.data.PORT ?? 8787;
 
 const actualProjectRef = extractSupabaseProjectRef(parsed.data.SUPABASE_DB_URL);
 if (!actualProjectRef) {
@@ -67,7 +121,6 @@ if (
 
 export const env = {
   ...parsed.data,
-  API_PORT: apiPort,
   SUPABASE_PROJECT_REF_ACTUAL: normalizedActual,
   SUPABASE_PROJECT_REF_EXPECTED: expectedProjectRef,
   SUPABASE_PROD_PROJECT_REF: prodProjectRef

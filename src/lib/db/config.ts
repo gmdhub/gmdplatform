@@ -10,7 +10,6 @@ const API_BASE_URL_STORAGE_KEY_BASE = 'gmd_api_base_url';
 const DATABASE_DIRECTORY_STORAGE_KEY_BASE = 'gmd_database_directory';
 const APP_ENV_MARKER_KEY = 'gmd_app_env_marker';
 const FIXED_DATA_PROVIDER: DataProvider = 'api';
-const LOCAL_API_HOSTS = new Set(['127.0.0.1', 'localhost', '0.0.0.0', '::1']);
 
 const SENSITIVE_STORAGE_BASE_KEYS = ['gmd_user', 'gmd_auth_tokens', 'gmd_ambulatorio', 'gmd_api_base_url'] as const;
 
@@ -33,38 +32,12 @@ const API_BASE_OVERRIDE_ALLOWED =
 let storageIsolationApplied = false;
 
 function getDefaultApiBaseUrl(): string {
-  const configuredValue = String(import.meta.env.VITE_API_BASE_URL ?? '').trim();
-  const fallbackLocalValue = 'http://127.0.0.1:8787';
-  const valueToValidate = configuredValue || (APP_ENV === 'production' ? '' : fallbackLocalValue);
-
-  if (!valueToValidate) {
-    throw new Error(
-      'VITE_API_BASE_URL è obbligatorio in produzione: imposta un URL HTTPS pubblico del backend API.'
-    );
-  }
-
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(valueToValidate);
-  } catch {
-    throw new Error(`VITE_API_BASE_URL non valido: ${valueToValidate}`);
-  }
-
-  if (APP_ENV === 'production') {
-    if (parsedUrl.protocol !== 'https:') {
-      throw new Error(
-        `VITE_API_BASE_URL in produzione deve usare HTTPS (valore attuale: ${valueToValidate})`
-      );
-    }
-
-    if (LOCAL_API_HOSTS.has(parsedUrl.hostname.toLowerCase())) {
-      throw new Error(
-        `VITE_API_BASE_URL in produzione non può puntare a localhost (valore attuale: ${valueToValidate})`
-      );
-    }
-  }
-
-  return `${parsedUrl.protocol}//${parsedUrl.host}`;
+  return String(
+    import.meta.env.VITE_API_BASE_URL ??
+      'https://gvxzgahxrymnzckevluk.supabase.co/functions/v1/gmd-api'
+  )
+    .trim()
+    .replace(/\/+$/, '');
 }
 
 function removeStorageKey(storage: Storage, key: string): void {

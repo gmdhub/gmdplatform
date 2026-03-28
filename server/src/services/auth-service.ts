@@ -1,5 +1,3 @@
-import argon2 from 'argon2';
-import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { env } from '../config/env.js';
 import { withTransaction } from '../db/pool.js';
@@ -8,7 +6,9 @@ import {
   findAuthUserById,
   findAuthUserByUsername,
   getActiveSessionByRefreshHash,
-  revokeSessionById
+  revokeSessionById,
+  revokeSessionsByUserId,
+  verifyUserPassword
 } from '../repos/auth-repo.js';
 import { sha256, signAccessToken, signRefreshToken, verifyToken } from './auth-tokens.js';
 
@@ -28,6 +28,12 @@ export type AuthUser = {
   roles: string[];
   permissions: string[];
   scopeAmbulatori: number[];
+};
+
+export type LoginResult = {
+  user: AuthUser;
+  tokens: AuthTokens;
+  password_rotation_required: boolean;
 };
 
 function normalizePrimaryRole(roles: string[]): 'admin' | 'medico' | 'infermiere' {
@@ -54,26 +60,18 @@ function buildAuthUser(record: Awaited<ReturnType<typeof findAuthUserByUsername>
   };
 }
 
-async function verifyPasswordHash(hash: string, plainPassword: string): Promise<boolean> {
-  if (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$')) {
-    return bcrypt.compare(plainPassword, hash);
-  }
-
-  return argon2.verify(hash, plainPassword);
-}
-
 export async function loginWithPassword(params: {
   username: string;
   password: string;
   ipAddress?: string | null;
   deviceInfo?: string | null;
-}): Promise<{ user: AuthUser; tokens: AuthTokens } | null> {
+}): Promise<LoginResult | null> {
   const userRecord = await findAuthUserByUsername(params.username);
   if (!userRecord || userRecord.status !== 'active') {
     return null;
   }
 
-  const valid = await verifyPasswordHash(userRecord.password_hash, params.password);
+  const valid = await verifyUserPassword(userRecord.id, params.password);
   if (!valid) {
     return null;
   }
@@ -109,7 +107,8 @@ export async function loginWithPassword(params: {
       accessToken,
       refreshToken,
       expiresIn: env.ACCESS_TOKEN_TTL_SECONDS
-    }
+    },
+    password_rotation_required: userRecord.must_rotate
   };
 }
 
@@ -168,4 +167,99 @@ export async function logoutWithRefreshToken(refreshToken: string): Promise<void
   }
 
   await revokeSessionById(session.id);
+}
+
+export async function rotatePasswordWithCurrent(params: {
+  userId: string;
+  currentPassword: string;
+  newPassword: string;
+  ipAddress?: string | null;
+  deviceInfo?: string | null;
+}): Promise<LoginResult | null> {
+  const userRecord = await findAuthUserById(params.userId);
+  if (!userRecord || userRecord.status !== 'active') {
+    return null;
+  }
+
+  const valid = await verifyUserPassword(userRecord.id, params.currentPassword);
+  if (!valid) {
+    return null;
+  }
+
+  const sessionId = randomUUID();
+  const refreshToken = await signRefreshToken(userRecord.id, sessionId);
+  const refreshTokenHash = sha256(refreshToken);
+  const refreshExpiresAt = new Date(Date.now() + env.REFRESH_TOKEN_TTL_SECONDS * 1000);
+
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE iam.user_credential
+       SET password_hash = crypt($2, gen_salt('bf', 12)),
+           password_algo = 'bcrypt',
+           must_rotate = FALSE,
+           password_changed_at = now()
+       WHERE user_id = $1`,
+      [userRecord.id, params.newPassword]
+    );
+
+    await client.query(
+      `UPDATE iam.user_session
+       SET revoked_at = now()
+       WHERE user_id = $1
+         AND revoked_at IS NULL`,
+      [userRecord.id]
+    );
+
+    await createSession(client, {
+      sessionId,
+      userId: userRecord.id,
+      refreshTokenHash,
+      expiresAt: refreshExpiresAt,
+      ipAddress: params.ipAddress ?? null,
+      deviceInfo: params.deviceInfo ?? null
+    });
+  });
+
+  const refreshedUser = await findAuthUserById(userRecord.id);
+  if (!refreshedUser) {
+    return null;
+  }
+
+  const user = buildAuthUser(refreshedUser);
+  const accessToken = await signAccessToken({
+    sub: user.internal_id,
+    username: user.username,
+    roles: user.roles,
+    permissions: user.permissions,
+    scopeAmbulatori: user.scopeAmbulatori
+  });
+
+  return {
+    user,
+    tokens: {
+      accessToken,
+      refreshToken,
+      expiresIn: env.ACCESS_TOKEN_TTL_SECONDS
+    },
+    password_rotation_required: false
+  };
+}
+
+export async function forceTemporaryPassword(params: {
+  userId: string;
+  temporaryPassword: string;
+}): Promise<void> {
+  await withTransaction(async (client) => {
+    await client.query(
+      `UPDATE iam.user_credential
+       SET password_hash = crypt($2, gen_salt('bf', 12)),
+           password_algo = 'bcrypt',
+           must_rotate = TRUE,
+           password_changed_at = now()
+       WHERE user_id = $1`,
+      [params.userId, params.temporaryPassword]
+    );
+  });
+
+  await revokeSessionsByUserId(params.userId);
 }

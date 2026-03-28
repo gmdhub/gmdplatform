@@ -1,4 +1,3 @@
-import argon2 from 'argon2';
 import { env } from '../config/env.js';
 import { query, withTransaction } from './pool.js';
 
@@ -96,8 +95,6 @@ async function ensureBaseAmbulatori(): Promise<AmbulatorioRow[]> {
 }
 
 async function ensureDeveloperAdmin(): Promise<string> {
-  const passwordHash = await argon2.hash('admin123');
-
   return withTransaction(async (client) => {
     const existing = await client.query<{ id: string }>(
       `SELECT id
@@ -122,14 +119,14 @@ async function ensureDeveloperAdmin(): Promise<string> {
 
     await client.query(
       `INSERT INTO iam.user_credential(user_id, password_hash, password_algo, must_rotate)
-       VALUES ($1, $2, 'argon2id', FALSE)
+       VALUES ($1, crypt($2, gen_salt('bf', 12)), 'bcrypt', FALSE)
        ON CONFLICT (user_id)
        DO UPDATE SET
          password_hash = EXCLUDED.password_hash,
          password_algo = EXCLUDED.password_algo,
          must_rotate = EXCLUDED.must_rotate,
          password_changed_at = now()`,
-      [userId, passwordHash]
+      [userId, 'admin123']
     );
 
     const role = await client.query<{ id: number }>(

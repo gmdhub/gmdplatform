@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { authStore } from '$lib/stores/auth';
-  import { authenticateUser } from '$lib/db/auth';
+  import { authenticateUser, rotateCurrentUserPassword } from '$lib/db/auth';
   import { getScopedStorageKey } from '$lib/db/config';
   import Button from '$lib/components/Button.svelte';
   import Input from '$lib/components/Input.svelte';
@@ -14,6 +14,10 @@
   let loading = false;
   let rememberMe = false;
   let showPassword = false;
+  let rotationRequired = false;
+  let rotatingPassword = false;
+  let newPassword = '';
+  let confirmNewPassword = '';
   const REMEMBER_USERNAME_KEY = getScopedStorageKey('gmd_saved_username');
 
   function getErrorMessage(err: unknown): string {
@@ -69,6 +73,9 @@
   async function handleLogin() {
     error = '';
     loading = true;
+    rotationRequired = false;
+    newPassword = '';
+    confirmNewPassword = '';
 
     try {
       console.log('Tentativo login con username:', username);
@@ -80,10 +87,10 @@
       }
 
       console.log('Chiamata authenticateUser...');
-      const user = await authenticateUser(username, password);
-      console.log('Risultato authenticateUser:', user);
+      const authResult = await authenticateUser(username, password);
+      console.log('Risultato authenticateUser:', authResult);
 
-      if (user) {
+      if (authResult?.user) {
         console.log('Login riuscito!');
 
         // Salva credenziali se "Ricordami" è attivo
@@ -95,7 +102,13 @@
           }
         }
 
-        authStore.login(user);
+        if (authResult.passwordRotationRequired) {
+          rotationRequired = true;
+          error = 'Password temporanea rilevata. Imposta subito una nuova password.';
+          return;
+        }
+
+        authStore.login(authResult.user);
         goto('/ambulatori');
       } else {
         console.log('Credenziali non valide');
@@ -107,6 +120,48 @@
       error = `Errore: ${getErrorMessage(err)}`;
     } finally {
       loading = false;
+    }
+  }
+
+  async function handleRotatePassword() {
+    if (!rotationRequired) {
+      return;
+    }
+
+    error = '';
+
+    if (!newPassword || newPassword.length < 8) {
+      error = 'La nuova password deve contenere almeno 8 caratteri';
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      error = 'Le password non coincidono';
+      return;
+    }
+
+    if (newPassword === password) {
+      error = 'La nuova password deve essere diversa da quella temporanea';
+      return;
+    }
+
+    rotatingPassword = true;
+    try {
+      const user = await rotateCurrentUserPassword(password, newPassword);
+      if (!user) {
+        error = 'Impossibile aggiornare la password. Verifica la password temporanea.';
+        return;
+      }
+
+      rotationRequired = false;
+      newPassword = '';
+      confirmNewPassword = '';
+      authStore.login(user);
+      goto('/ambulatori');
+    } catch (err) {
+      error = `Errore aggiornamento password: ${getErrorMessage(err)}`;
+    } finally {
+      rotatingPassword = false;
     }
   }
 
@@ -176,10 +231,47 @@
           </div>
         {/if}
 
-        <Button type="submit" variant="primary" size="lg" fullWidth disabled={loading}>
-          {loading ? 'Accesso in corso...' : 'Accedi'}
-        </Button>
+        {#if !rotationRequired}
+          <Button type="submit" variant="primary" size="lg" fullWidth disabled={loading}>
+            {loading ? 'Accesso in corso...' : 'Accedi'}
+          </Button>
+        {/if}
       </form>
+
+      {#if rotationRequired}
+        <div class="rotation-box">
+          <h3>Cambio Password Obbligatorio</h3>
+          <p>Per motivi di sicurezza devi impostare una nuova password prima di continuare.</p>
+
+          <Input
+            id="new-password"
+            type="password"
+            label="Nuova password"
+            bind:value={newPassword}
+            placeholder="Almeno 8 caratteri"
+            required
+          />
+          <Input
+            id="confirm-new-password"
+            type="password"
+            label="Conferma nuova password"
+            bind:value={confirmNewPassword}
+            placeholder="Ripeti la nuova password"
+            required
+          />
+
+          <Button
+            type="button"
+            variant="primary"
+            size="lg"
+            fullWidth
+            disabled={rotatingPassword}
+            on:click={handleRotatePassword}
+          >
+            {rotatingPassword ? 'Aggiornamento...' : 'Aggiorna Password'}
+          </Button>
+        </div>
+      {/if}
 
       <div class="login-footer">
         <p class="demo-credentials">
@@ -309,6 +401,29 @@
     margin-top: var(--space-6);
     padding-top: var(--space-6);
     border-top: 1px solid var(--color-border);
+  }
+
+  .rotation-box {
+    margin-top: var(--space-5);
+    padding: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .rotation-box h3 {
+    margin: 0;
+    font-size: var(--text-base);
+    color: var(--color-text);
+  }
+
+  .rotation-box p {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
   }
 
   .demo-credentials {

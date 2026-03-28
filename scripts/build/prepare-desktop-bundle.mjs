@@ -1,28 +1,14 @@
 import { execSync } from 'node:child_process';
-import {
-  chmodSync,
-  copyFileSync,
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync
-} from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const projectRoot = process.cwd();
-const serverDistSourceDir = resolve(projectRoot, 'server/dist');
+const serverDistDir = resolve(projectRoot, 'server/dist');
+const envOutputPath = resolve(serverDistDir, '.env');
 const serverNodeModulesDir = resolve(projectRoot, 'server/node_modules');
 const serverFastifyPackageJson = resolve(serverNodeModulesDir, 'fastify/package.json');
-const desktopRuntimeDir = resolve(projectRoot, 'desktop-runtime');
-const embeddedServerDir = resolve(desktopRuntimeDir, 'server');
-const embeddedServerDistDir = resolve(embeddedServerDir, 'dist');
-const envOutputPath = resolve(embeddedServerDistDir, '.env');
 const bundledNodeFilename = process.platform === 'win32' ? 'node.exe' : 'node';
-const bundledNodePath = resolve(embeddedServerDistDir, 'runtime', bundledNodeFilename);
-const LOCALHOST_HOSTS = new Set(['127.0.0.1', 'localhost', '0.0.0.0', '::1']);
-const VALID_DESKTOP_API_MODES = new Set(['remote', 'embedded']);
+const bundledNodePath = resolve(serverDistDir, 'runtime', bundledNodeFilename);
 
 function run(command) {
   execSync(command, { cwd: projectRoot, stdio: 'inherit' });
@@ -39,81 +25,6 @@ function ensureServerDependencies() {
 
   console.log('[bundle] server/node_modules non trovato o incompleto: eseguo npm --prefix server ci');
   run('npm --prefix server ci');
-}
-
-function resolveDesktopApiMode() {
-  const explicitMode = String(process.env.GMD_DESKTOP_API_MODE ?? '')
-    .trim()
-    .toLowerCase();
-  if (explicitMode) {
-    if (!VALID_DESKTOP_API_MODES.has(explicitMode)) {
-      throw new Error(
-        `[bundle] Invalid GMD_DESKTOP_API_MODE="${explicitMode}". Allowed values: remote | embedded`
-      );
-    }
-    return explicitMode;
-  }
-
-  const appEnv = String(process.env.VITE_APP_ENV ?? '').trim().toLowerCase();
-  return appEnv === 'production' ? 'remote' : 'embedded';
-}
-
-function normalizeApiBaseUrl(rawValue) {
-  const raw = rawValue.trim();
-  if (!raw) {
-    throw new Error(
-      '[bundle] VITE_API_BASE_URL obbligatorio in modalità remote. Inserisci URL HTTPS pubblico (es: https://api.example.com).'
-    );
-  }
-
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(raw);
-  } catch {
-    throw new Error(
-      `[bundle] VITE_API_BASE_URL non valido (${raw}). Inserisci un URL assoluto HTTPS valido.`
-    );
-  }
-
-  if (parsedUrl.protocol !== 'https:') {
-    throw new Error(
-      `[bundle] VITE_API_BASE_URL deve usare HTTPS in release remote. Valore attuale: ${raw}`
-    );
-  }
-
-  if (LOCALHOST_HOSTS.has(parsedUrl.hostname.toLowerCase())) {
-    throw new Error(
-      `[bundle] VITE_API_BASE_URL non può puntare a localhost in release remote. Valore attuale: ${raw}`
-    );
-  }
-
-  return parsedUrl.origin;
-}
-
-function resetDesktopRuntimeDirectory() {
-  rmSync(desktopRuntimeDir, { recursive: true, force: true });
-  mkdirSync(desktopRuntimeDir, { recursive: true });
-}
-
-function writeDesktopRuntimeMetadata(mode, details = {}) {
-  writeFileSync(
-    resolve(desktopRuntimeDir, 'mode.json'),
-    JSON.stringify(
-      {
-        mode,
-        generatedAt: new Date().toISOString(),
-        ...details
-      },
-      null,
-      2
-    )
-  );
-}
-
-function copyEmbeddedServerRuntime() {
-  cpSync(serverDistSourceDir, embeddedServerDistDir, { recursive: true });
-  cpSync(serverNodeModulesDir, resolve(embeddedServerDir, 'node_modules'), { recursive: true });
-  copyFileSync(resolve(projectRoot, 'server/package.json'), resolve(embeddedServerDir, 'package.json'));
 }
 
 function listDynamicLibraries(binaryPath) {
@@ -159,7 +70,7 @@ function resolvePortableNodeBinary() {
     throw new Error(`[bundle] Architettura Node non supportata per runtime portabile: ${process.arch}`);
   }
 
-  const runtimeDir = resolve(embeddedServerDistDir, 'runtime');
+  const runtimeDir = resolve(serverDistDir, 'runtime');
   const archiveName = `node-v${nodeVersion}-darwin-${arch}.tar.gz`;
   const archivePath = resolve(runtimeDir, archiveName);
   const extractedDir = resolve(runtimeDir, `node-v${nodeVersion}-darwin-${arch}`);
@@ -186,7 +97,7 @@ function resolvePortableNodeBinary() {
 }
 
 function bundleNodeRuntime() {
-  mkdirSync(resolve(embeddedServerDistDir, 'runtime'), { recursive: true });
+  mkdirSync(resolve(serverDistDir, 'runtime'), { recursive: true });
   const sourceNodePath = resolvePortableNodeBinary();
   copyFileSync(sourceNodePath, bundledNodePath);
   if (process.platform !== 'win32') {
@@ -254,26 +165,8 @@ function copyRuntimeEnvFile() {
   console.log(`[bundle] API env file copied: ${selected} -> ${envOutputPath}`);
 }
 
-const desktopApiMode = resolveDesktopApiMode();
-let normalizedRemoteApiBaseUrl = null;
-
-if (desktopApiMode === 'remote') {
-  normalizedRemoteApiBaseUrl = normalizeApiBaseUrl(String(process.env.VITE_API_BASE_URL ?? ''));
-  process.env.VITE_API_BASE_URL = normalizedRemoteApiBaseUrl;
-}
-
+ensureServerDependencies();
 run('npm run build');
-resetDesktopRuntimeDirectory();
-
-if (desktopApiMode === 'remote') {
-  writeDesktopRuntimeMetadata('remote', { apiBaseUrl: normalizedRemoteApiBaseUrl });
-  console.log(`[bundle] Desktop API mode: remote (${normalizedRemoteApiBaseUrl})`);
-} else {
-  ensureServerDependencies();
-  run('npm --prefix server run build');
-  copyEmbeddedServerRuntime();
-  bundleNodeRuntime();
-  copyRuntimeEnvFile();
-  writeDesktopRuntimeMetadata('embedded');
-  console.log('[bundle] Desktop API mode: embedded');
-}
+run('npm --prefix server run build');
+bundleNodeRuntime();
+copyRuntimeEnvFile();

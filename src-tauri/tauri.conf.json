@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "node scripts/dev/tauri-dev-with-api.mjs",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "node scripts/build/prepare-desktop-bundle.mjs",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../build"
   },
   "app": {
@@ -78,8 +78,7 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "../src/lib/templates/template_dislip.docx",
-      "../desktop-runtime"
+      "../src/lib/templates/template_dislip.docx"
     ],
     "icon": [
       "icons/32x32.png",

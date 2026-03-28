@@ -1,0 +1,12 @@
+{
+  "imports": {
+    "fastify": "npm:fastify@5.6.2",
+    "@fastify/cors": "npm:@fastify/cors@11.1.0",
+    "fastify-plugin": "npm:fastify-plugin@5.1.0",
+    "pg": "npm:pg@8.16.3",
+    "zod": "npm:zod@4.1.11",
+    "jose": "npm:jose@6.1.0",
+    "dotenv": "npm:dotenv@16.6.1"
+  },
+  "nodeModulesDir": "auto"
+}

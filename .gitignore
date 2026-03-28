@@ -16,5 +16,3 @@ gmd.db.bak.*
 src/lib/db/database.db
 src-tauri/target
 server/dist
-desktop-runtime/*
-!desktop-runtime/.gitkeep

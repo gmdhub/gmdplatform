@@ -41,16 +41,6 @@ function buildUrl(path: string): string {
   return `${getApiBaseUrl()}${normalizedPath}`;
 }
 
-function isLocalApiBaseUrl(baseUrl: string): boolean {
-  try {
-    const parsedUrl = new URL(baseUrl);
-    const hostname = parsedUrl.hostname.toLowerCase();
-    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '0.0.0.0' || hostname === '::1';
-  } catch {
-    return false;
-  }
-}
-
 function parseErrorMessage(status: number, payload: unknown): string {
   if (payload && typeof payload === 'object') {
     const maybeError = 'error' in payload ? (payload as { error?: unknown }).error : undefined;
@@ -181,11 +171,8 @@ async function request<T>(
     }
 
     const baseUrl = getApiBaseUrl();
-    const isLocalBackend = isLocalApiBaseUrl(baseUrl);
     throw new ApiError(
-      isLocalBackend
-        ? `Impossibile raggiungere il backend API locale su ${baseUrl}. Verifica che il servizio locale sia attivo.`
-        : `Impossibile raggiungere il backend API remoto su ${baseUrl}. Verifica connessione Internet e disponibilità del servizio.`,
+      `Impossibile raggiungere l'API remota su ${baseUrl}. Verifica la connessione di rete.`,
       0,
       {
         cause: error instanceof Error ? error.message : String(error)

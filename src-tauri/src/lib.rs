@@ -5,27 +5,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use serde::Deserialize;
 use tauri::Manager;
 
 struct ApiProcessState(Mutex<Option<Child>>);
-const DESKTOP_API_MODE: &str = match option_env!("GMD_DESKTOP_API_MODE") {
-    Some(value) => value,
-    None => "embedded",
-};
-
-fn desktop_api_mode() -> &'static str {
-    match DESKTOP_API_MODE {
-        "remote" => "remote",
-        "embedded" => "embedded",
-        _ => "embedded",
-    }
-}
-
-#[derive(Deserialize)]
-struct DesktopRuntimeModeMetadata {
-    mode: Option<String>,
-}
 
 fn log_embedded_api(message: &str) {
     let log_path = std::env::temp_dir().join("gmd-embedded-api.log");
@@ -290,35 +272,6 @@ fn api_entry_candidates(resource_dir: &Path) -> Vec<PathBuf> {
 
     let mut candidates: Vec<PathBuf> = Vec::new();
     for base in unique_paths(base_dirs) {
-        candidates.push(
-            base.join("desktop-runtime")
-                .join("server")
-                .join("dist")
-                .join("index.js"),
-        );
-        candidates.push(
-            base.join("_up_")
-                .join("desktop-runtime")
-                .join("server")
-                .join("dist")
-                .join("index.js"),
-        );
-        candidates.push(
-            base.join("resources")
-                .join("desktop-runtime")
-                .join("server")
-                .join("dist")
-                .join("index.js"),
-        );
-        candidates.push(
-            base.join("resources")
-                .join("_up_")
-                .join("desktop-runtime")
-                .join("server")
-                .join("dist")
-                .join("index.js"),
-        );
-
         candidates.push(base.join("server").join("dist").join("index.js"));
         candidates.push(base.join("_up_").join("server").join("dist").join("index.js"));
         candidates.push(base.join("resources").join("server").join("dist").join("index.js"));
@@ -353,21 +306,6 @@ fn existing_api_entries(resource_dir: &Path) -> Vec<PathBuf> {
 fn resolve_runtime_env_file(resource_dir: &Path, api_entry: &Path) -> Option<PathBuf> {
     let env_candidates = vec![
         api_entry.parent().map(|parent| parent.join(".env")),
-        Some(
-            resource_dir
-                .join("desktop-runtime")
-                .join("server")
-                .join("dist")
-                .join(".env"),
-        ),
-        Some(
-            resource_dir
-                .join("_up_")
-                .join("desktop-runtime")
-                .join("server")
-                .join("dist")
-                .join(".env"),
-        ),
         Some(resource_dir.join("server").join(".env.prod")),
         Some(resource_dir.join("_up_").join("server").join(".env.prod")),
         Some(resource_dir.join(".env.prod")),
@@ -411,35 +349,6 @@ fn process_stdio_for_embedded_api() -> Option<(Stdio, Stdio)> {
     };
 
     Some((Stdio::from(stdout_file), Stdio::from(stderr_file)))
-}
-
-fn resolve_runtime_mode_file(resource_dir: &Path) -> Option<PathBuf> {
-    let candidates = vec![
-        resource_dir.join("desktop-runtime").join("mode.json"),
-        resource_dir
-            .join("_up_")
-            .join("desktop-runtime")
-            .join("mode.json"),
-    ];
-
-    candidates.into_iter().find(|candidate| candidate.exists())
-}
-
-fn resolve_desktop_api_mode(resource_dir: &Path) -> String {
-    if let Some(mode_file) = resolve_runtime_mode_file(resource_dir) {
-        if let Ok(content) = std::fs::read_to_string(&mode_file) {
-            if let Ok(metadata) = serde_json::from_str::<DesktopRuntimeModeMetadata>(&content) {
-                if let Some(mode) = metadata.mode {
-                    let normalized = mode.trim().to_lowercase();
-                    if normalized == "remote" || normalized == "embedded" {
-                        return normalized;
-                    }
-                }
-            }
-        }
-    }
-
-    desktop_api_mode().to_string()
 }
 
 fn wait_for_local_api_boot(child: &mut Child, timeout: Duration) -> Result<(), String> {
@@ -489,41 +398,6 @@ fn node_command_candidates(resource_dir: &Path, api_entry: &Path) -> Vec<String>
 
     candidates.push(sanitize_windows_path(&path_to_string(
         &resource_dir
-            .join("desktop-runtime")
-            .join("server")
-            .join("dist")
-            .join("runtime")
-            .join("node"),
-    )));
-    candidates.push(sanitize_windows_path(&path_to_string(
-        &resource_dir
-            .join("desktop-runtime")
-            .join("server")
-            .join("dist")
-            .join("runtime")
-            .join("node.exe"),
-    )));
-    candidates.push(sanitize_windows_path(&path_to_string(
-        &resource_dir
-            .join("_up_")
-            .join("desktop-runtime")
-            .join("server")
-            .join("dist")
-            .join("runtime")
-            .join("node"),
-    )));
-    candidates.push(sanitize_windows_path(&path_to_string(
-        &resource_dir
-            .join("_up_")
-            .join("desktop-runtime")
-            .join("server")
-            .join("dist")
-            .join("runtime")
-            .join("node.exe"),
-    )));
-
-    candidates.push(sanitize_windows_path(&path_to_string(
-        &resource_dir
             .join("server")
             .join("dist")
             .join("runtime")
@@ -568,6 +442,11 @@ fn start_embedded_api_if_needed(app: &tauri::AppHandle) {
         return;
     }
 
+    if is_local_api_running() {
+        log_embedded_api("API already listening on 127.0.0.1:8787");
+        return;
+    }
+
     let resource_dir = match app.path().resource_dir() {
         Ok(path) => path,
         Err(error) => {
@@ -576,17 +455,6 @@ fn start_embedded_api_if_needed(app: &tauri::AppHandle) {
             return;
         }
     };
-
-    let resolved_api_mode = resolve_desktop_api_mode(&resource_dir);
-    if resolved_api_mode == "remote" {
-        log_embedded_api("Skipping embedded API bootstrap (desktop API mode=remote)");
-        return;
-    }
-
-    if is_local_api_running() {
-        log_embedded_api("API already listening on 127.0.0.1:8787");
-        return;
-    }
 
     let candidate_entries = api_entry_candidates(&resource_dir);
     let existing_entries = existing_api_entries(&resource_dir);
@@ -842,14 +710,11 @@ fn convert_with_word_applescript(input_path: &Path, output_pdf: &Path) -> Result
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(ApiProcessState(Mutex::new(None)))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::new().build())
         .setup(|app| {
-            start_embedded_api_if_needed(&app.handle());
-
             let splash_window = tauri::WebviewWindowBuilder::new(
                 app,
                 "splashscreen",
@@ -890,15 +755,5 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(move |app_handle, event| {
-            if let tauri::RunEvent::Exit = event {
-                if let Some(state) = app_handle.try_state::<ApiProcessState>() {
-                    if let Ok(mut guard) = state.0.lock() {
-                        if let Some(mut child) = guard.take() {
-                            let _ = child.kill();
-                        }
-                    }
-                }
-            }
-        });
+        .run(|_, _| {});
 }

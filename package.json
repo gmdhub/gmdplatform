@@ -14,6 +14,8 @@
     "api:migrate:dev": "node scripts/env/run-with-env-file.mjs --env-file server/.env.dev -- npm --prefix server run migrate",
     "api:migrate:prod": "node scripts/env/run-with-env-file.mjs --env-file server/.env.prod --set CONFIRM_PROD_MIGRATION=YES -- npm --prefix server run migrate",
     "api:seed:dev": "node scripts/env/run-with-env-file.mjs --env-file server/.env.dev -- npm --prefix server run seed:dev",
+    "api:reset-temp-passwords:dev": "node scripts/env/run-with-env-file.mjs --env-file server/.env.dev -- npm --prefix server run reset-temp-passwords",
+    "api:reset-temp-passwords:prod": "node scripts/env/run-with-env-file.mjs --env-file server/.env.prod --set CONFIRM_TEMP_PASSWORD_RESET=YES -- npm --prefix server run reset-temp-passwords",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -22,6 +24,8 @@
     "etl:sqlite-to-postgres": "npx tsx scripts/migrate/sqlite-to-postgres.ts",
     "etl:sqlite-to-postgres:dev": "node scripts/env/run-with-env-file.mjs --env-file server/.env.dev --set MIGRATION_TARGET=dev -- npx tsx scripts/migrate/sqlite-to-postgres.ts",
     "etl:sqlite-to-postgres:prod": "node scripts/env/run-with-env-file.mjs --env-file server/.env.prod --set MIGRATION_TARGET=prod --set CONFIRM_PROD_ETL=YES -- npx tsx scripts/migrate/sqlite-to-postgres.ts",
+    "edge:deploy:dev": "supabase functions deploy gmd-api --project-ref fvtiuwrvrpxbvqgsenzh --no-verify-jwt",
+    "edge:deploy:prod": "supabase functions deploy gmd-api --project-ref gvxzgahxrymnzckevluk --no-verify-jwt",
     "tauri": "tauri"
   },
   "license": "MIT",

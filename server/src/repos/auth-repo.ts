@@ -9,6 +9,8 @@ export type AuthUserRecord = {
   last_name: string;
   status: string;
   password_hash: string;
+  password_algo: string;
+  must_rotate: boolean;
   roles: string[];
   permissions: string[];
   scope_ambulatori: number[];
@@ -24,6 +26,8 @@ export async function findAuthUserByUsername(username: string): Promise<AuthUser
        u.last_name,
        u.status,
        c.password_hash,
+       c.password_algo,
+       c.must_rotate,
        COALESCE(array_agg(DISTINCT r.code) FILTER (WHERE r.code IS NOT NULL), ARRAY[]::text[]) AS roles,
        COALESCE(array_agg(DISTINCT p.code) FILTER (WHERE p.code IS NOT NULL), ARRAY[]::text[]) AS permissions,
        COALESCE(array_agg(DISTINCT ur.scope_id) FILTER (WHERE ur.scope_type = 'ambulatorio' AND ur.scope_id IS NOT NULL), ARRAY[]::bigint[])::int[] AS scope_ambulatori
@@ -34,7 +38,7 @@ export async function findAuthUserByUsername(username: string): Promise<AuthUser
      LEFT JOIN iam.role_permission rp ON rp.role_id = r.id
      LEFT JOIN iam.permission p ON p.id = rp.permission_id
      WHERE u.username = $1
-     GROUP BY u.id, u.legacy_id, u.username, u.first_name, u.last_name, u.status, c.password_hash
+     GROUP BY u.id, u.legacy_id, u.username, u.first_name, u.last_name, u.status, c.password_hash, c.password_algo, c.must_rotate
      LIMIT 1`,
     [username]
   );
@@ -52,6 +56,8 @@ export async function findAuthUserById(userId: string): Promise<AuthUserRecord |
        u.last_name,
        u.status,
        c.password_hash,
+       c.password_algo,
+       c.must_rotate,
        COALESCE(array_agg(DISTINCT r.code) FILTER (WHERE r.code IS NOT NULL), ARRAY[]::text[]) AS roles,
        COALESCE(array_agg(DISTINCT p.code) FILTER (WHERE p.code IS NOT NULL), ARRAY[]::text[]) AS permissions,
        COALESCE(array_agg(DISTINCT ur.scope_id) FILTER (WHERE ur.scope_type = 'ambulatorio' AND ur.scope_id IS NOT NULL), ARRAY[]::bigint[])::int[] AS scope_ambulatori
@@ -62,7 +68,7 @@ export async function findAuthUserById(userId: string): Promise<AuthUserRecord |
      LEFT JOIN iam.role_permission rp ON rp.role_id = r.id
      LEFT JOIN iam.permission p ON p.id = rp.permission_id
      WHERE u.id = $1
-     GROUP BY u.id, u.legacy_id, u.username, u.first_name, u.last_name, u.status, c.password_hash
+     GROUP BY u.id, u.legacy_id, u.username, u.first_name, u.last_name, u.status, c.password_hash, c.password_algo, c.must_rotate
      LIMIT 1`,
     [userId]
   );
@@ -126,5 +132,31 @@ export async function revokeSessionById(sessionId: string): Promise<void> {
      WHERE id = $1
        AND revoked_at IS NULL`,
     [sessionId]
+  );
+}
+
+export async function verifyUserPassword(userId: string, plainPassword: string): Promise<boolean> {
+  const result = await query<{ valid: boolean }>(
+    `SELECT
+       CASE
+         WHEN c.password_algo = 'bcrypt' THEN c.password_hash = crypt($2, c.password_hash)
+         ELSE FALSE
+       END AS valid
+     FROM iam.user_credential c
+     WHERE c.user_id = $1
+     LIMIT 1`,
+    [userId, plainPassword]
+  );
+
+  return Boolean(result.rows[0]?.valid);
+}
+
+export async function revokeSessionsByUserId(userId: string): Promise<void> {
+  await query(
+    `UPDATE iam.user_session
+     SET revoked_at = now()
+     WHERE user_id = $1
+       AND revoked_at IS NULL`,
+    [userId]
   );
 }

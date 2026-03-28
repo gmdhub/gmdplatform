@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS iam.app_user (
 CREATE TABLE IF NOT EXISTS iam.user_credential (
   user_id UUID PRIMARY KEY REFERENCES iam.app_user(id) ON DELETE CASCADE,
   password_hash TEXT NOT NULL,
-  password_algo TEXT NOT NULL DEFAULT 'argon2id',
+  password_algo TEXT NOT NULL DEFAULT 'bcrypt',
   must_rotate BOOLEAN NOT NULL DEFAULT FALSE,
   password_changed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

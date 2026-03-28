@@ -10,6 +10,7 @@ import {
   disableUserFromApi,
   getAllUsersFromApi,
   loginWithApi,
+  rotatePasswordFromApi,
   updateUserFromApi,
   updateUserPasswordFromApi,
   verifyUserPasswordFromApi
@@ -36,7 +37,7 @@ function sanitizeUser(user: User): User {
 export async function authenticateUser(
   username: string,
   password: string
-): Promise<User | null> {
+): Promise<{ user: User; passwordRotationRequired: boolean } | null> {
   if (isApiDataProvider()) {
     const result = await loginWithApi(username, password);
     if (!result) {
@@ -44,7 +45,10 @@ export async function authenticateUser(
     }
 
     authStore.setTokens(result.tokens);
-    return sanitizeUser(result.user);
+    return {
+      user: sanitizeUser(result.user),
+      passwordRotationRequired: result.passwordRotationRequired
+    };
   }
 
   const db = await initDatabase();
@@ -66,7 +70,27 @@ export async function authenticateUser(
     return null;
   }
 
-  return sanitizeUser(user);
+  return {
+    user: sanitizeUser(user),
+    passwordRotationRequired: false
+  };
+}
+
+export async function rotateCurrentUserPassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<User | null> {
+  if (!isApiDataProvider()) {
+    throw new Error('Rotazione password disponibile solo con provider API');
+  }
+
+  const result = await rotatePasswordFromApi(currentPassword, newPassword);
+  if (!result) {
+    return null;
+  }
+
+  authStore.setTokens(result.tokens);
+  return sanitizeUser(result.user);
 }
 
 export async function createUser(

@@ -1,5 +1,3 @@
-import argon2 from 'argon2';
-import bcrypt from 'bcryptjs';
 import { query, withTransaction } from '../db/pool.js';
 
 export type AppUserRow = {
@@ -29,8 +27,6 @@ export async function createUser(params: {
   nome: string;
   cognome: string;
 }): Promise<number> {
-  const passwordHash = await argon2.hash(params.password);
-
   return withTransaction(async (client) => {
     const userRes = await client.query<{ id: string; legacy_id: number }>(
       `INSERT INTO iam.app_user(username, first_name, last_name, status)
@@ -47,8 +43,8 @@ export async function createUser(params: {
 
     await client.query(
       `INSERT INTO iam.user_credential(user_id, password_hash, password_algo, must_rotate)
-       VALUES ($1, $2, 'argon2id', FALSE)`,
-      [userId, passwordHash]
+       VALUES ($1, crypt($2, gen_salt('bf', 12)), 'bcrypt', TRUE)`,
+      [userId, params.password]
     );
 
     const roleRes = await client.query<{ id: number }>(
@@ -175,44 +171,33 @@ export async function disableUserByLegacyId(userLegacyId: number): Promise<void>
   );
 }
 
-async function comparePassword(hash: string, password: string): Promise<boolean> {
-  if (hash.startsWith('$2a$') || hash.startsWith('$2b$') || hash.startsWith('$2y$')) {
-    return bcrypt.compare(password, hash);
-  }
-
-  return argon2.verify(hash, password);
-}
-
 export async function verifyUserPasswordByLegacyId(userLegacyId: number, password: string): Promise<boolean> {
-  const result = await query<{ password_hash: string }>(
-    `SELECT c.password_hash
+  const result = await query<{ valid: boolean }>(
+    `SELECT
+       CASE
+         WHEN c.password_algo = 'bcrypt' THEN c.password_hash = crypt($2, c.password_hash)
+         ELSE FALSE
+       END AS valid
      FROM iam.user_credential c
      INNER JOIN iam.app_user u ON u.id = c.user_id
      WHERE u.legacy_id = $1
      LIMIT 1`,
-    [userLegacyId]
+    [userLegacyId, password]
   );
 
-  const hash = result.rows[0]?.password_hash;
-  if (!hash) {
-    return false;
-  }
-
-  return comparePassword(hash, password);
+  return Boolean(result.rows[0]?.valid);
 }
 
 export async function updateUserPasswordByLegacyId(userLegacyId: number, password: string): Promise<void> {
-  const newHash = await argon2.hash(password);
-
   await query(
     `UPDATE iam.user_credential c
-     SET password_hash = $1,
-         password_algo = 'argon2id',
+     SET password_hash = crypt($1, gen_salt('bf', 12)),
+         password_algo = 'bcrypt',
          must_rotate = FALSE,
          password_changed_at = now()
      FROM iam.app_user u
      WHERE c.user_id = u.id
-       AND u.legacy_id = $2`,
-    [newHash, userLegacyId]
+      AND u.legacy_id = $2`,
+    [password, userLegacyId]
   );
 }

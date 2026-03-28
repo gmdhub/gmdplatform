@@ -34,6 +34,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+
       - name: Validate required secrets
         shell: bash
         run: |
@@ -45,6 +52,13 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Build API dist for Edge bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix server ci
+          npm --prefix server run build
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
@@ -61,7 +75,7 @@ jobs:
             API_PORT=8787 \
             ACCESS_TOKEN_TTL_SECONDS=900 \
             REFRESH_TOKEN_TTL_SECONDS=2592000 \
-            CORS_ORIGIN=* \
+            CORS_ORIGIN='*' \
             ALLOW_DEV_PROD_DB=NO \
             API_JWT_SECRET="$API_JWT_SECRET" \
             GMD_SUPABASE_DB_URL="$SUPABASE_DB_URL" \
@@ -90,6 +104,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: server/package-lock.json
+
       - name: Validate required secrets
         shell: bash
         run: |
@@ -101,6 +122,13 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Build API dist for Edge bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix server ci
+          npm --prefix server run build
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
@@ -117,7 +145,7 @@ jobs:
             API_PORT=8787 \
             ACCESS_TOKEN_TTL_SECONDS=900 \
             REFRESH_TOKEN_TTL_SECONDS=2592000 \
-            CORS_ORIGIN=* \
+            CORS_ORIGIN='*' \
             ALLOW_DEV_PROD_DB=NO \
             API_JWT_SECRET="$API_JWT_SECRET" \
             GMD_SUPABASE_DB_URL="$SUPABASE_DB_URL" \

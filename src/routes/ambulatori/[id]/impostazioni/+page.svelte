@@ -23,6 +23,7 @@
   import type { User, UpsertAmbulatorioOperatingWindowInput } from '$lib/db/types';
   import { ApiError } from '$lib/services/http-client';
   import {
+    getAppEnvironment,
     getDefaultDatabaseDirectory,
     getRuntimeDatabaseDirectory,
     getRuntimeDatabasePath,
@@ -41,6 +42,9 @@
   $: user = $authStore.user;
   $: isAdmin = user?.role === 'admin';
   $: canEditOperatingSettings = user?.role === 'admin' || user?.role === 'medico';
+  const appEnvironment = getAppEnvironment();
+  const appEnvironmentLabel =
+    appEnvironment === 'production' ? 'Produzione' : appEnvironment === 'test' ? 'Test' : 'Sviluppo';
   const apiMode = isApiDataProvider();
 
   let activeTab: 'ambulatorio' | 'utenti' | 'backup' | 'integrazioni' | 'sistema' = 'ambulatorio';
@@ -1117,7 +1121,7 @@
               </div>
               <div class="info-item">
                 <span class="info-label">Ambiente</span>
-                <span class="info-value">Produzione</span>
+                <span class="info-value">{appEnvironmentLabel}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">Build</span>

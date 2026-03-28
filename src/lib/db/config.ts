@@ -5,6 +5,11 @@ const SQLITE_URL_PATTERN = /^sqlite:.+/i;
 export type DataProvider = 'legacy' | 'api';
 export type AppEnvironment = 'development' | 'production' | 'test';
 
+const SUPABASE_DEV_PROJECT_REF = 'fvtiuwrvrpxbvqgsenzh';
+const SUPABASE_PROD_PROJECT_REF = 'gvxzgahxrymnzckevluk';
+const SUPABASE_DEV_API_BASE_URL = `https://${SUPABASE_DEV_PROJECT_REF}.supabase.co/functions/v1/gmd-api`;
+const SUPABASE_PROD_API_BASE_URL = `https://${SUPABASE_PROD_PROJECT_REF}.supabase.co/functions/v1/gmd-api`;
+
 const DATA_PROVIDER_STORAGE_KEY_BASE = 'gmd_data_provider';
 const API_BASE_URL_STORAGE_KEY_BASE = 'gmd_api_base_url';
 const DATABASE_DIRECTORY_STORAGE_KEY_BASE = 'gmd_database_directory';
@@ -22,22 +27,53 @@ function normalizeAppEnvironment(rawValue: string): AppEnvironment {
   return 'development';
 }
 
-const APP_ENV: AppEnvironment = normalizeAppEnvironment(
-  String(import.meta.env.VITE_APP_ENV ?? import.meta.env.MODE ?? 'development')
-);
+const APP_ENV: AppEnvironment = import.meta.env.DEV
+  ? 'development'
+  : normalizeAppEnvironment(String(import.meta.env.VITE_APP_ENV ?? import.meta.env.MODE ?? 'development'));
 
 const API_BASE_OVERRIDE_ALLOWED =
   String(import.meta.env.VITE_ALLOW_API_BASE_OVERRIDE ?? 'false').trim().toLowerCase() === 'true';
 
 let storageIsolationApplied = false;
 
+function normalizeApiBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function isProdSupabaseApiUrl(url: string): boolean {
+  return url.includes(SUPABASE_PROD_PROJECT_REF);
+}
+
+function isDevSupabaseApiUrl(url: string): boolean {
+  return url.includes(SUPABASE_DEV_PROJECT_REF);
+}
+
+function applyApiEnvironmentGuard(candidate: string): string {
+  const normalized = normalizeApiBaseUrl(candidate);
+  if (!normalized) {
+    return APP_ENV === 'production' ? SUPABASE_PROD_API_BASE_URL : SUPABASE_DEV_API_BASE_URL;
+  }
+
+  if (APP_ENV !== 'production' && isProdSupabaseApiUrl(normalized)) {
+    console.warn('[config] API base URL prod bloccata in ambiente non-prod; uso endpoint dev.');
+    return SUPABASE_DEV_API_BASE_URL;
+  }
+
+  if (APP_ENV === 'production' && isDevSupabaseApiUrl(normalized)) {
+    console.warn('[config] API base URL dev bloccata in ambiente prod; uso endpoint prod.');
+    return SUPABASE_PROD_API_BASE_URL;
+  }
+
+  return normalized;
+}
+
 function getDefaultApiBaseUrl(): string {
-  return String(
-    import.meta.env.VITE_API_BASE_URL ??
-      'https://gvxzgahxrymnzckevluk.supabase.co/functions/v1/gmd-api'
-  )
-    .trim()
-    .replace(/\/+$/, '');
+  const explicit = String(import.meta.env.VITE_API_BASE_URL ?? '').trim();
+  if (explicit) {
+    return applyApiEnvironmentGuard(explicit);
+  }
+
+  return APP_ENV === 'production' ? SUPABASE_PROD_API_BASE_URL : SUPABASE_DEV_API_BASE_URL;
 }
 
 function removeStorageKey(storage: Storage, key: string): void {
@@ -149,7 +185,7 @@ export function getApiBaseUrl(): string {
 
     const storedValue = localStorageRef.getItem(scopedKey)?.trim();
     if (storedValue) {
-      return storedValue.replace(/\/+$/, '');
+      return applyApiEnvironmentGuard(storedValue);
     }
   }
 
@@ -169,7 +205,7 @@ export function setApiBaseUrl(url: string): void {
     return;
   }
 
-  const normalized = url.trim().replace(/\/+$/, '');
+  const normalized = applyApiEnvironmentGuard(url);
   const scopedKey = getScopedStorageKey(API_BASE_URL_STORAGE_KEY_BASE);
   if (!normalized) {
     removeStorageKey(localStorageRef, scopedKey);

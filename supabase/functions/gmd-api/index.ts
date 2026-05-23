@@ -61,6 +61,14 @@ function toResponseHeaders(headers: Record<string, string | string[] | number | 
   return responseHeaders;
 }
 
+function allowsResponseBody(statusCode: number): boolean {
+  if (statusCode === 101 || statusCode === 103 || statusCode === 204 || statusCode === 205 || statusCode === 304) {
+    return false;
+  }
+
+  return true;
+}
+
 function getRemoteAddress(request: Request): string {
   const forwarded = request.headers.get('x-forwarded-for');
   if (!forwarded) {
@@ -99,7 +107,11 @@ Deno.serve(async (request) => {
   const normalizedPath = normalizePath(url.pathname);
   const injectUrl = `${normalizedPath}${url.search}`;
   const isPayloadMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method.toUpperCase());
-  const payload = isPayloadMethod ? await request.text() : undefined;
+  let payload: string | undefined;
+  if (isPayloadMethod) {
+    const rawPayload = await request.text();
+    payload = rawPayload.length > 0 ? rawPayload : undefined;
+  }
 
   const injected = await app.inject({
     method: request.method,
@@ -109,8 +121,17 @@ Deno.serve(async (request) => {
     remoteAddress: getRemoteAddress(request)
   });
 
-  return new Response(injected.body, {
+  const responseHeaders = toResponseHeaders(injected.headers);
+  const responseBody = allowsResponseBody(injected.statusCode) ? injected.body : null;
+
+  if (responseBody === null) {
+    responseHeaders.delete('content-length');
+    responseHeaders.delete('content-type');
+    responseHeaders.delete('transfer-encoding');
+  }
+
+  return new Response(responseBody, {
     status: injected.statusCode,
-    headers: toResponseHeaders(injected.headers)
+    headers: responseHeaders
   });
 });

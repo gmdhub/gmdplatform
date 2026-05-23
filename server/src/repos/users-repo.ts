@@ -14,6 +14,11 @@ export async function listUsers(): Promise<AppUserRow[]> {
   const result = await query<AppUserRow>(
     `SELECT id, username, role, nome, cognome, created_at, updated_at
      FROM compat.users
+     WHERE id IN (
+       SELECT legacy_id::BIGINT
+       FROM iam.app_user
+       WHERE status = 'active'
+     )
      ORDER BY cognome ASC, nome ASC`
   );
 
@@ -154,21 +159,34 @@ export async function updateUserByLegacyId(
 }
 
 export async function disableUserByLegacyId(userLegacyId: number): Promise<void> {
-  await query(
+  const userUpdateRes = await query<{ id: string }>(
     `UPDATE iam.app_user
      SET status = 'disabled',
          disabled_at = now()
-     WHERE legacy_id = $1`,
+     WHERE legacy_id = $1
+     RETURNING id`,
     [userLegacyId]
   );
 
-  await query(
-    `UPDATE iam.user_session
-     SET revoked_at = now()
-     WHERE user_id = (SELECT id FROM iam.app_user WHERE legacy_id = $1)
-       AND revoked_at IS NULL`,
-    [userLegacyId]
-  );
+  const userId = userUpdateRes.rows[0]?.id;
+  if (!userId) {
+    const error = new Error(`Utente ${userLegacyId} non trovato`);
+    (error as Error & { statusCode?: number }).statusCode = 404;
+    throw error;
+  }
+
+  // Best effort: eventuali errori di revoca sessioni non devono annullare la disabilitazione utente.
+  try {
+    await query(
+      `UPDATE iam.user_session
+       SET revoked_at = now()
+       WHERE user_id = $1
+         AND revoked_at IS NULL`,
+      [userId]
+    );
+  } catch {
+    // no-op
+  }
 }
 
 export async function verifyUserPasswordByLegacyId(userLegacyId: number, password: string): Promise<boolean> {

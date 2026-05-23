@@ -487,6 +487,7 @@
       await loadPazienti();
       showDeleteModal = false;
       pazienteToDelete = null;
+      toastStore.show('success', 'Paziente eliminato con successo');
     } catch (error) {
       console.error('Errore eliminazione paziente:', error);
       toastStore.show('error', `Errore eliminazione paziente: ${getErrorMessage(error)}`);

@@ -1,6 +1,7 @@
 <script lang="ts">
   import Card from '../Card.svelte';
   import Input from '../Input.svelte';
+  import SectionTitle from '../SectionTitle.svelte';
   import Textarea from '../Textarea.svelte';
 
   type EcocardiografiaValues = {
@@ -198,7 +199,7 @@
 </script>
 
 <Card>
-  <h2 class="section-title">Ecocardiografia</h2>
+  <SectionTitle title="Ecocardiografia" />
 
   {#each sections as section}
     <div class="eco-section">
@@ -234,15 +235,6 @@
 </Card>
 
 <style>
-  .section-title {
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--color-text);
-    margin: 0 0 var(--space-4) 0;
-    padding-bottom: var(--space-3);
-    border-bottom: 2px solid var(--color-border);
-  }
-
   .section-subtitle {
     font-size: var(--text-sm);
     font-weight: 600;

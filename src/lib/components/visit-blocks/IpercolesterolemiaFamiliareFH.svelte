@@ -4,6 +4,7 @@
   import { getDutchLipidScoreBreakdown } from '$lib/utils/dutch-lipid-score';
   import Card from '../Card.svelte';
   import Icon from '../Icon.svelte';
+  import SectionTitle from '../SectionTitle.svelte';
 
   export let enabled = false;
   export let familyHistoryOnePoint = false;
@@ -88,13 +89,12 @@
 <Card>
   <div class="section-header">
     <div class="title-wrap">
-      <div class="title-row">
-        <h2 class="section-title">Ipercolesterolemia Familiare (FH)</h2>
+      <SectionTitle title="Ipercolesterolemia Familiare (FH)">
         <label class="toggle-label">
           <input type="checkbox" bind:checked={enabled} />
           <span>Attiva calcolo</span>
         </label>
-      </div>
+      </SectionTitle>
       <p class="section-subtitle">
         Valutazione Dutch Lipid Clinic Network.
       </p>
@@ -298,25 +298,8 @@
     margin-bottom: var(--space-5);
   }
 
-  .title-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    flex-wrap: wrap;
-    margin-bottom: var(--space-3);
-    padding-bottom: var(--space-3);
-    border-bottom: 2px solid var(--color-border);
-  }
-
   .title-wrap {
     min-width: 0;
-  }
-
-  .section-title {
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--color-text);
-    margin: 0;
   }
 
   .section-subtitle {
@@ -576,7 +559,7 @@
     color: #d97706;
   }
 
-  .summary-warning-icon svg {
+  .summary-warning-icon :global(.icon-svg) {
     display: block;
     width: 100%;
     height: 100%;
@@ -595,9 +578,6 @@
       position: static;
     }
 
-    .title-row {
-      align-items: flex-start;
-    }
   }
 
   @media (max-width: 640px) {

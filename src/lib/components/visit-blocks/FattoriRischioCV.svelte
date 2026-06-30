@@ -3,6 +3,7 @@
   import type { DiabeteTipo } from '$lib/db/types';
   import Card from '../Card.svelte';
   import Icon from '../Icon.svelte';
+  import SectionTitle from '../SectionTitle.svelte';
 
   export let bmi: number | null = null;
 
@@ -79,7 +80,7 @@
 </script>
 
 <Card>
-  <h2 class="section-title">Fattori di Rischio Cardiovascolare</h2>
+  <SectionTitle title="Fattori di Rischio Cardiovascolare" />
 
   <div class="risk-factors-compact">
     <!-- Riga 1: Familiarità con campo inline -->
@@ -181,15 +182,6 @@
 </Card>
 
 <style>
-  .section-title {
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--color-text);
-    margin: 0 0 var(--space-3) 0;
-    padding-bottom: var(--space-2);
-    border-bottom: 2px solid var(--color-border);
-  }
-
   .risk-factors-compact {
     display: flex;
     flex-direction: column;
@@ -286,7 +278,7 @@
     margin: 0;
   }
 
-  .info-icon {
+  :global(.info-icon) {
     cursor: help;
     flex-shrink: 0;
     display: inline-block;

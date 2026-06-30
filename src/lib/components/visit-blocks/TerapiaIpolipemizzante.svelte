@@ -17,6 +17,7 @@
   } from '$lib/db/types';
   import { createEmptyTerapiaIpolipemizzante } from '$lib/utils/visit-clinical';
   import Card from '../Card.svelte';
+  import SectionTitle from '../SectionTitle.svelte';
 
   export let terapia: TerapiaIpolipemizzanteModel = createEmptyTerapiaIpolipemizzante();
 
@@ -96,7 +97,7 @@
 </script>
 
 <Card>
-  <h2 class="section-title">Terapia Ipolipemizzante</h2>
+  <SectionTitle title="Terapia Ipolipemizzante" />
 
   <div class="therapy-list">
     <div class="therapy-item">
@@ -311,15 +312,6 @@
 </Card>
 
 <style>
-  .section-title {
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--color-text);
-    margin: 0 0 var(--space-3) 0;
-    padding-bottom: var(--space-2);
-    border-bottom: 2px solid var(--color-border);
-  }
-
   .therapy-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -6,6 +6,7 @@
   } from '$lib/db/types';
   import Card from '../Card.svelte';
   import Input from '../Input.svelte';
+  import SectionTitle from '../SectionTitle.svelte';
 
   type Sex = 'M' | 'F' | 'Altro';
 
@@ -107,6 +108,14 @@
     return analytes.some((analyte) => String(esami[analyte.key] ?? '').trim().length > 0);
   }
 
+  function handleAnalyteInput(key: EsameEmaticoKey, event: CustomEvent<string>): void {
+    const nextValue = event.detail;
+    esami = {
+      ...esami,
+      [key]: nextValue
+    };
+  }
+
   $: {
     const nextEgfr = computeEgfr();
     const nextLdl = computeLdl();
@@ -117,18 +126,15 @@
 </script>
 
 <Card>
-  <div class="section-head">
-    <div class="section-title-row">
-      <h2 class="section-title">Esami Ematici</h2>
-      <div class="esami-date-input">
-        <Input
-          id="esami_data_ee"
-          type="date"
-          bind:value={esami.data_ee}
-        />
-      </div>
+  <SectionTitle title="Esami Ematici">
+    <div class="esami-date-input">
+      <Input
+        id="esami_data_ee"
+        type="date"
+        bind:value={esami.data_ee}
+      />
     </div>
-  </div>
+  </SectionTitle>
 
   <div class="analiti-grid">
     {#each analytes as analyte}
@@ -140,6 +146,7 @@
           pattern={'^[0-9]*[.,]?[0-9]{0,2}$'}
           label={analyte.label + ' (' + analyte.unit + ')'}
           bind:value={esami[analyte.key]}
+          on:input={(event) => handleAnalyteInput(analyte.key, event)}
           disabled={analyte.computed || false}
           placeholder={analyte.computed ? 'Calcolato automaticamente' : 'Inserisci valore'}
         />
@@ -159,28 +166,6 @@
 </Card>
 
 <style>
-  .section-title {
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--color-text);
-    margin: 0;
-  }
-
-  .section-head {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    padding-bottom: var(--space-3);
-    border-bottom: 2px solid var(--color-border);
-    margin-bottom: var(--space-4);
-  }
-
-  .section-title-row {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
   .analiti-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -194,12 +179,6 @@
 
   .esami-date-input :global(.input-group) {
     gap: 0;
-  }
-
-  @media (max-width: 640px) {
-    .section-title-row {
-      flex-wrap: wrap;
-    }
   }
 
   .analyte-field {

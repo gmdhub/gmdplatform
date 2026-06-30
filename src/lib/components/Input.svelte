@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
   import { capitalizeWords, uppercaseText } from '$lib/utils/formatters';
   import type { HTMLInputAttributes } from 'svelte/elements';
   import SegmentedDateField from './SegmentedDateField.svelte';
@@ -16,6 +17,8 @@
   export let inputmode: HTMLInputAttributes['inputmode'] = undefined;
   export let pattern: string | undefined = undefined;
 
+  const dispatch = createEventDispatcher<{ input: string }>();
+
   function handleInput(event: Event) {
     // Salta la formattazione per i campi date per non interferire con il comportamento nativo
     if (type === 'date' || type === 'datetime-local') return;
@@ -31,6 +34,7 @@
 
     value = newValue;
     target.value = newValue;
+    dispatch('input', newValue);
   }
 </script>
 

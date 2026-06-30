@@ -16,6 +16,7 @@
     normalizeValutazioneRischioCV
   } from '$lib/utils/visit-clinical';
   import Card from '../Card.svelte';
+  import SectionTitle from '../SectionTitle.svelte';
 
   export let valutazione: ValutazioneRischioCardiovascolare;
   export let esami: EsamiEmaticiValues;
@@ -162,9 +163,15 @@
   function handleRiskChange(event: Event) {
     const target = event.currentTarget as HTMLSelectElement;
     const nextRisk = normalizeRischioCVLevel(target.value);
+    const {
+      targetLdl: _previousTargetLdl,
+      status: _previousStatus,
+      statusMessage: _previousStatusMessage,
+      ...baseValutazione
+    } = valutazione;
     const nextValutazione = normalizeValutazioneRischioCV(
       {
-        ...valutazione,
+        ...baseValutazione,
         rischio: nextRisk
       },
       esami
@@ -282,9 +289,7 @@
 
 <Card>
   <div class="section-shell">
-    <div class="section-copy">
-      <h2 class="section-title">Valutazione Rischio Cardiovascolare</h2>
-    </div>
+    <SectionTitle title="Valutazione Rischio Cardiovascolare" />
 
     <div class="risk-board">
       <div class="board-segment board-select">
@@ -294,7 +299,7 @@
           value={normalizeRischioCVLevel(effectiveValutazione.rischio)}
           on:change={handleRiskChange}
         >
-          <option value="">Seleziona...</option>
+          <option value="" disabled>Seleziona il rischio CV del paziente...</option>
           {#each rischioCVOptions as option}
             <option value={option.value}>{option.label}</option>
           {/each}
@@ -531,15 +536,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-  }
-
-  .section-title {
-    margin: 0;
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--color-text);
-    padding-bottom: var(--space-3);
-    border-bottom: 2px solid var(--color-border);
   }
 
   .risk-board {

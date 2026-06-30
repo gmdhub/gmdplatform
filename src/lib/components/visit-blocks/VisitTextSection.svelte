@@ -1,5 +1,6 @@
 <script lang="ts">
   import Card from '../Card.svelte';
+  import SectionTitle from '../SectionTitle.svelte';
   import Textarea from '../Textarea.svelte';
 
   export let title: string;
@@ -10,7 +11,7 @@
 </script>
 
 <Card>
-  <h2 class="section-title">{title}</h2>
+  <SectionTitle {title} />
 
   <Textarea
     {id}
@@ -19,14 +20,3 @@
     {rows}
   />
 </Card>
-
-<style>
-  .section-title {
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--color-text);
-    margin: 0 0 var(--space-3) 0;
-    padding-bottom: var(--space-2);
-    border-bottom: 2px solid var(--color-border);
-  }
-</style>

@@ -274,7 +274,7 @@
         fumo_ex_eta: fattori?.fumo_ex_eta || ''
       },
       fhAssessment: parseFHAssessment(visita.fh_assessment),
-      anamnesiPatologicaRemota: visita.anamnesi_cardiologica || visita.anamnesi || '',
+      anamnesi: visita.anamnesi || visita.anamnesi_cardiologica || '',
       terapiaIpolipemizzante: parseTerapiaIpolipemizzante(visita.terapia_ipolipemizzante),
       terapiaDomiciliare: visita.terapia_domiciliare || '',
       valutazioneOdierna: visita.valutazione_odierna || '',

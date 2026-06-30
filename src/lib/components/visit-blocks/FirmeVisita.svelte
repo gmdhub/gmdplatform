@@ -2,6 +2,7 @@
   import type { FirmeVisita as FirmeVisitaValue } from '$lib/db/types';
   import Card from '../Card.svelte';
   import Input from '../Input.svelte';
+  import SectionTitle from '../SectionTitle.svelte';
 
   export let firme: FirmeVisitaValue = {
     cardiologoNome: '',
@@ -54,7 +55,7 @@
 </script>
 
 <Card>
-  <h2 class="section-title">Firme</h2>
+  <SectionTitle title="Firme" />
 
   <div class="signature-group">
     <label class="group-label" for="firma-cardiologo">Il Cardiologo</label>
@@ -154,15 +155,6 @@
 </Card>
 
 <style>
-  .section-title {
-    margin: 0 0 var(--space-4) 0;
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--color-text);
-    padding-bottom: var(--space-3);
-    border-bottom: 2px solid var(--color-border);
-  }
-
   .signature-group + .signature-group {
     margin-top: var(--space-5);
   }

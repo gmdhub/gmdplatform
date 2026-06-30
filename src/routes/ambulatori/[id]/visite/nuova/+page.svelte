@@ -27,13 +27,12 @@
   import Card from '$lib/components/Card.svelte';
   import Input from '$lib/components/Input.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
+  import SectionTitle from '$lib/components/SectionTitle.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import PazienteFormModal from '$lib/components/PazienteFormModal.svelte';
   import FattoriRischioCV from '$lib/components/visit-blocks/FattoriRischioCV.svelte';
   import IpercolesterolemiaFamiliareFH from '$lib/components/visit-blocks/IpercolesterolemiaFamiliareFH.svelte';
-  import AnamnesiCardiologica from '$lib/components/visit-blocks/AnamnesiCardiologica.svelte';
   import TerapiaIpolipemizzante from '$lib/components/visit-blocks/TerapiaIpolipemizzante.svelte';
-  import TerapiaDomiciliare from '$lib/components/visit-blocks/TerapiaDomiciliare.svelte';
   import ValutazioneOdierna from '$lib/components/visit-blocks/ValutazioneOdierna.svelte';
   import EsamiEmatici from '$lib/components/visit-blocks/EsamiEmatici.svelte';
   import ValutazioneRischioCardiovascolare from '$lib/components/visit-blocks/ValutazioneRischioCardiovascolare.svelte';
@@ -277,9 +276,6 @@
 
   let fhAssessment = createEmptyFHAssessment();
 
-  // Anamnesi Patologica Remota
-  let anamnesiCardiologica = '';
-
   let terapiaIpolipemizzante = createEmptyTerapiaIpolipemizzante();
 
   // Terapia Domiciliare
@@ -415,7 +411,6 @@
 
     fattoriRischio = createEmptyFattoriRischio();
     fhAssessment = createEmptyFHAssessment();
-    anamnesiCardiologica = '';
     terapiaIpolipemizzante = createEmptyTerapiaIpolipemizzante();
     terapiaDomiciliare = '';
     valutazioneOdierna = '';
@@ -439,14 +434,13 @@
       peso: latestVisita.peso != null ? String(latestVisita.peso) : '',
       bmi: latestVisita.bmi != null ? String(latestVisita.bmi) : '',
       bsa: latestVisita.bsa != null ? String(latestVisita.bsa) : '',
-      anamnesi: latestVisita.anamnesi || '',
+      anamnesi: latestVisita.anamnesi || latestVisita.anamnesi_cardiologica || '',
       esame_obiettivo: latestVisita.esame_obiettivo || '',
       diagnosi: latestVisita.diagnosi || '',
       terapia: isScaVisitAmbulatorio ? '' : latestVisita.terapia || '',
       note: latestVisita.note || ''
     };
 
-    anamnesiCardiologica = latestVisita.anamnesi_cardiologica || '';
     terapiaIpolipemizzante = parseTerapiaIpolipemizzante(latestVisita.terapia_ipolipemizzante);
     terapiaDomiciliare = latestVisita.terapia_domiciliare || (isScaVisitAmbulatorio ? latestVisita.terapia || '' : '');
     valutazioneOdierna = latestVisita.valutazione_odierna || '';
@@ -478,14 +472,13 @@
       peso: visita.peso != null ? String(visita.peso) : '',
       bmi: visita.bmi != null ? String(visita.bmi) : '',
       bsa: visita.bsa != null ? String(visita.bsa) : '',
-      anamnesi: visita.anamnesi || '',
+      anamnesi: visita.anamnesi || visita.anamnesi_cardiologica || '',
       esame_obiettivo: visita.esame_obiettivo || '',
       diagnosi: visita.diagnosi || '',
       terapia: isScaVisitAmbulatorio ? '' : visita.terapia || '',
       note: visita.note || ''
     };
 
-    anamnesiCardiologica = visita.anamnesi_cardiologica || '';
     terapiaIpolipemizzante = parseTerapiaIpolipemizzante(visita.terapia_ipolipemizzante);
     terapiaDomiciliare = visita.terapia_domiciliare || (isScaVisitAmbulatorio ? visita.terapia || '' : '');
     valutazioneOdierna = visita.valutazione_odierna || '';
@@ -1059,7 +1052,6 @@
         peso: formData.peso ? parseFloat(formData.peso) : undefined,
         bmi: formData.bmi ? parseFloat(formData.bmi) : undefined,
         bsa: formData.bsa ? parseFloat(formData.bsa) : undefined,
-        anamnesi_cardiologica: isVisitBlockVisible('anamnesi-cardiologica') ? anamnesiCardiologica || undefined : undefined,
         terapia_ipolipemizzante: isVisitBlockVisible('terapia-ipolipemizzante') ? serializeTerapiaIpolipemizzante(terapiaIpolipemizzante) : undefined,
         terapia_domiciliare: isVisitBlockVisible('terapia-domiciliare') ? terapiaDomiciliare || undefined : undefined,
         valutazione_odierna: isVisitBlockVisible('valutazione-odierna') ? valutazioneOdierna || undefined : undefined,
@@ -1145,7 +1137,7 @@
               fumo_ex_eta: fattoriRischio.fumo_ex_eta
             },
             fhAssessment,
-            anamnesiPatologicaRemota: isScaVisitAmbulatorio ? formData.anamnesi : anamnesiCardiologica,
+            anamnesi: formData.anamnesi,
             terapiaIpolipemizzante,
             terapiaDomiciliare,
             valutazioneOdierna,
@@ -1332,7 +1324,7 @@
     <div class="page-content">
     <!-- Dati Anagrafici Paziente -->
     <Card>
-      <h2 class="section-title">Dati Anagrafici</h2>
+      <SectionTitle title="Dati Anagrafici" />
       <div class="patient-info-grid">
         <div class="info-item">
           <span class="info-label">Nome Completo:</span>
@@ -1378,7 +1370,7 @@
 
     <!-- Dati Visita -->
     <Card>
-      <h2 class="section-title">Dati Visita</h2>
+      <SectionTitle title="Dati Visita" />
       <div class="form-row">
         <div class="form-group">
           <Input
@@ -1418,7 +1410,7 @@
 
     <!-- Dati Antropometrici -->
     <Card>
-      <h2 class="section-title">Dati Antropometrici</h2>
+      <SectionTitle title="Dati Antropometrici" />
       <div class="anthropometric-row">
         <div class="form-group">
           <Input
@@ -1519,27 +1511,18 @@
       />
     {/if}
 
-    <!-- Anamnesi Patologica Remota (solo per Ambulatorio Dislipidemie) -->
-    {#if isVisitBlockVisible('anamnesi-cardiologica')}
-      <AnamnesiCardiologica bind:anamnesi_cardiologica={anamnesiCardiologica} />
-    {/if}
-
     {#if isVisitBlockVisible('terapia-ipolipemizzante')}
       <TerapiaIpolipemizzante bind:terapia={terapiaIpolipemizzante} />
     {/if}
 
     <!-- Terapia Domiciliare -->
     {#if isVisitBlockVisible('terapia-domiciliare')}
-      {#if isScaVisitAmbulatorio}
-        <VisitTextSection
-          title="Terapia domiciliare"
-          id="terapia_domiciliare"
-          bind:value={terapiaDomiciliare}
-          placeholder="Inserisci la terapia domiciliare..."
-        />
-      {:else}
-        <TerapiaDomiciliare bind:terapia_domiciliare={terapiaDomiciliare} />
-      {/if}
+      <VisitTextSection
+        title="Terapia domiciliare"
+        id="terapia_domiciliare"
+        bind:value={terapiaDomiciliare}
+        placeholder="Inserisci la terapia domiciliare..."
+      />
     {/if}
 
     <!-- Valutazione Odierna -->
@@ -1702,15 +1685,6 @@
     justify-content: flex-end;
     gap: var(--space-3);
     margin-top: var(--space-5);
-  }
-
-  .section-title {
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--color-text-primary);
-    margin: 0 0 var(--space-4) 0;
-    padding-bottom: var(--space-3);
-    border-bottom: 2px solid var(--color-border);
   }
 
   .form-row {

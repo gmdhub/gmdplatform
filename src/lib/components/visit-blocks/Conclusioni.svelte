@@ -12,6 +12,7 @@
   } from '$lib/db/types';
   import { createEmptyPianificazioneFollowUp } from '$lib/utils/visit-clinical';
   import Card from '../Card.svelte';
+  import SectionTitle from '../SectionTitle.svelte';
   import Textarea from '../Textarea.svelte';
 
   export let conclusioni = '';
@@ -470,7 +471,7 @@
 </script>
 
 <Card>
-  <h2 class="section-title">Conclusioni</h2>
+  <SectionTitle title="Conclusioni" />
 
   <div class="anamnesi-content">
     <Textarea
@@ -700,15 +701,6 @@
 </Card>
 
 <style>
-  .section-title {
-    font-size: var(--text-xl);
-    font-weight: 600;
-    color: var(--color-text);
-    margin: 0 0 var(--space-3) 0;
-    padding-bottom: var(--space-2);
-    border-bottom: 2px solid var(--color-border);
-  }
-
   .anamnesi-content {
     display: flex;
     flex-direction: column;

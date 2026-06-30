@@ -39,6 +39,7 @@ export const visitBlocksConfig: VisitBlockConfig[] = [
   {
     id: 'anamnesi',
     component: 'VisitTextSection',
+    allAmbulatori: true,
     ambulatori: []
   },
   {
@@ -46,11 +47,6 @@ export const visitBlocksConfig: VisitBlockConfig[] = [
     component: 'TerapiaIpolipemizzante',
     allAmbulatori: true,
     ambulatori: []
-  },
-  {
-    id: 'anamnesi-cardiologica',
-    component: 'AnamnesiCardiologica',
-    ambulatori: [1] // Solo Ambulatorio Dislipidemie (ID 1)
   },
   {
     id: 'terapia-domiciliare',

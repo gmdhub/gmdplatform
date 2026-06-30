@@ -88,7 +88,7 @@ export type GenerateVisitaRefertoInput = {
   formData: ReportFormData;
   fattoriRischio: ReportFattoriRischio;
   fhAssessment: FHAssessment;
-  anamnesiPatologicaRemota: string;
+  anamnesi: string;
   terapiaIpolipemizzante: TerapiaIpolipemizzante;
   terapiaDomiciliare: string;
   valutazioneOdierna: string;
@@ -439,19 +439,19 @@ function buildReportData(
   template: ReportTemplateDescriptor = DISLIPIDEMIE_TEMPLATE
 ): Record<string, string> {
   const fattoriRischioList = buildFattoriRischioList(input.fattoriRischio, input.formData.bmi);
-  const anamnesiPatologicaRemota = cleanupMarkdown(input.anamnesiPatologicaRemota);
+  const anamnesi = cleanupMarkdown(input.anamnesi);
   const terapiaIpolipemizzante = buildTerapiaIpolipemizzanteList(input.terapiaIpolipemizzante);
   const terapiaDomiciliare = cleanupMarkdown(input.terapiaDomiciliare);
   const valutazioneOdierna = cleanupMarkdown(input.valutazioneOdierna);
   const hasFattoriRischio = fattoriRischioList.trim().length > 0;
-  const hasAnamnesiPatologicaRemota = anamnesiPatologicaRemota.trim().length > 0;
+  const hasAnamnesi = anamnesi.trim().length > 0;
 
   const fattoriPair =
-    !hasFattoriRischio && !hasAnamnesiPatologicaRemota
+    !hasFattoriRischio && !hasAnamnesi
       ? { header: 'Non precedenti anamnestici di rilievo.', value: '' }
       : buildConditionalPair('Fattori di rischio CV:', fattoriRischioList);
 
-  const aprPair = buildConditionalPair('Anamnesi patologica remota:', anamnesiPatologicaRemota);
+  const aprPair = buildConditionalPair('Anamnesi patologica remota:', anamnesi);
   const terapiaIpolipemizzantePair =
     terapiaIpolipemizzante.trim().length > 0
       ? buildConditionalPair('Terapia ipolipemizzante:', terapiaIpolipemizzante)

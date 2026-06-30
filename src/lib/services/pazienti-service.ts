@@ -33,8 +33,8 @@ export async function getAllPazientiFromApi(): Promise<Paziente[]> {
   return rows.map((row) => mapPaziente(row));
 }
 
-export async function getPazientiByAmbulatorioFromApi(ambulatorioId: number): Promise<Paziente[]> {
-  const rows = await apiGet<Array<Record<string, unknown>>>(`/patients?ambulatorio_id=${ambulatorioId}`);
+export async function getPazientiByAmbulatorioFromApi(_ambulatorioId: number): Promise<Paziente[]> {
+  const rows = await apiGet<Array<Record<string, unknown>>>('/patients');
   return rows.map((row) => mapPaziente(row));
 }
 
@@ -43,11 +43,12 @@ export async function getPazienteByIdFromApi(id: number): Promise<Paziente | nul
   return row ? mapPaziente(row) : null;
 }
 
-export async function searchPazientiFromApi(ambulatorioId: number, searchTerm: string): Promise<Paziente[]> {
+export async function searchPazientiFromApi(
+  _ambulatorioId: number,
+  searchTerm: string
+): Promise<Paziente[]> {
   const encodedSearch = encodeURIComponent(searchTerm);
-  const rows = await apiGet<Array<Record<string, unknown>>>(
-    `/patients?ambulatorio_id=${ambulatorioId}&search=${encodedSearch}`
-  );
+  const rows = await apiGet<Array<Record<string, unknown>>>(`/patients?search=${encodedSearch}`);
   return rows.map((row) => mapPaziente(row));
 }
 

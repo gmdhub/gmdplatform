@@ -13,7 +13,7 @@
   import timeGridPlugin from '@fullcalendar/timegrid';
   import interactionPlugin from '@fullcalendar/interaction';
   import itLocale from '@fullcalendar/core/locales/it';
-  import FullCalendar from 'svelte-fullcalendar';
+  import FullCalendar from '$lib/components/FullCalendar.svelte';
   import { sidebarCollapsedStore } from '$lib/stores/sidebar';
   import { ambulatorioStore } from '$lib/stores/ambulatorio';
   import { toastStore } from '$lib/stores/toast';

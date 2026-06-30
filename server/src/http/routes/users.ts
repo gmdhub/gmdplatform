@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { logAuditEvent } from '../../repos/audit-repo.js';
 import {
@@ -46,6 +46,34 @@ const idParams = z.object({
 });
 
 export const userRoutes: FastifyPluginAsync = async (fastify) => {
+  const userDeletePreHandler = [fastify.requireAuth, fastify.requirePermission('users.manage')];
+
+  const handleDisableUser = async (request: FastifyRequest, reply: FastifyReply) => {
+    ensureAdmin(request);
+
+    const params = idParams.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: 'Invalid params', details: params.error.issues });
+    }
+
+    await disableUserByLegacyId(params.data.id);
+
+    try {
+      await logAuditEvent({
+        actor_user_id: request.auth?.userId ?? null,
+        action: 'disable',
+        entity_schema: 'iam',
+        entity_table: 'app_user',
+        entity_pk: String(params.data.id),
+        correlation_id: request.id
+      });
+    } catch (auditError) {
+      request.log.error(auditError, 'Impossibile registrare audit evento disable utente');
+    }
+
+    return reply.code(204).send();
+  };
+
   fastify.get('/users', {
     preHandler: [fastify.requireAuth, fastify.requirePermission('users.manage')]
   }, async (request, reply) => {
@@ -117,29 +145,11 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.code(204).send();
   });
 
-  fastify.delete('/users/:id', {
-    preHandler: [fastify.requireAuth, fastify.requirePermission('users.manage')]
-  }, async (request, reply) => {
-    ensureAdmin(request);
+  fastify.delete('/users/:id', { preHandler: userDeletePreHandler }, handleDisableUser);
 
-    const params = idParams.safeParse(request.params);
-    if (!params.success) {
-      return reply.code(400).send({ error: 'Invalid params', details: params.error.issues });
-    }
+  fastify.post('/users/:id/delete', { preHandler: userDeletePreHandler }, handleDisableUser);
 
-    await disableUserByLegacyId(params.data.id);
-
-    await logAuditEvent({
-      actor_user_id: request.auth?.userId ?? null,
-      action: 'disable',
-      entity_schema: 'iam',
-      entity_table: 'app_user',
-      entity_pk: String(params.data.id),
-      correlation_id: request.id
-    });
-
-    return reply.code(204).send();
-  });
+  fastify.post('/users/:id/disable', { preHandler: userDeletePreHandler }, handleDisableUser);
 
   fastify.post('/users/:id/verify-password', {
     preHandler: [fastify.requireAuth, fastify.requirePermission('users.manage')]

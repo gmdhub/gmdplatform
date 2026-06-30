@@ -358,7 +358,7 @@
     color: var(--color-primary);
   }
 
-  .password-toggle svg {
+  .password-toggle :global(.icon-svg) {
     width: 20px;
     height: 20px;
   }

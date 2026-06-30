@@ -1,6 +1,8 @@
 import type { User } from '$lib/db/types';
-import type { AuthTokens } from '$lib/stores/auth';
-import { apiDelete, apiGet, apiPatch, apiPost } from './http-client';
+import { getApiBaseUrl } from '$lib/db/config';
+import { getAuthSnapshot, type AuthTokens } from '$lib/stores/auth';
+import { invoke } from '@tauri-apps/api/core';
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from './http-client';
 
 type LoginResponse = {
   user: {
@@ -42,6 +44,27 @@ function mapUser(row: Partial<User> & { [key: string]: unknown }): User {
     created_at: String(row.created_at ?? new Date().toISOString()),
     updated_at: String(row.updated_at ?? new Date().toISOString())
   };
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+async function disableUserViaNativeHttp(id: number): Promise<void> {
+  if (!isTauriRuntime()) {
+    throw new Error('Fallback HTTP nativo disponibile solo in runtime Tauri');
+  }
+
+  const accessToken = getAuthSnapshot().tokens?.accessToken;
+  if (!accessToken) {
+    throw new Error('Token di accesso non disponibile per fallback HTTP nativo');
+  }
+
+  await invoke<void>('disable_user_via_native_http', {
+    apiBaseUrl: getApiBaseUrl(),
+    userId: id,
+    accessToken
+  });
 }
 
 export async function loginWithApi(username: string, password: string): Promise<{
@@ -132,7 +155,20 @@ export async function updateUserFromApi(
 }
 
 export async function disableUserFromApi(id: number): Promise<void> {
-  await apiDelete<void>(`/users/${id}`);
+  try {
+    await apiDelete<void>(`/users/${id}`);
+  } catch (error) {
+    const isLoadFailed =
+      error instanceof ApiError &&
+      error.status === 0 &&
+      /load failed/i.test(error.message);
+
+    if (!isLoadFailed) {
+      throw error;
+    }
+
+    await disableUserViaNativeHttp(id);
+  }
 }
 
 export async function verifyUserPasswordFromApi(id: number, password: string): Promise<boolean> {

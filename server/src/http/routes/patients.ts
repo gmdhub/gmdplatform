@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { logAuditEvent, logPatientAccess, logPatientAccessBatch } from '../../repos/audit-repo.js';
 import {
@@ -50,6 +50,32 @@ function normalizeTaxCode(value: string | null | undefined): { taxCode: string |
 }
 
 export const patientRoutes: FastifyPluginAsync = async (fastify) => {
+  const patientDeletePreHandler = [fastify.requireAuth, fastify.requirePermission('patients.write')];
+
+  const handleDeletePatient = async (request: FastifyRequest, reply: FastifyReply) => {
+    const params = idParams.safeParse(request.params);
+    if (!params.success) {
+      return reply.code(400).send({ error: 'Invalid params', details: params.error.issues });
+    }
+
+    await deletePatientByLegacyId(params.data.id, request.auth?.userId ?? null);
+
+    try {
+      await logAuditEvent({
+        actor_user_id: request.auth?.userId ?? null,
+        action: 'soft_delete',
+        entity_schema: 'patient',
+        entity_table: 'patient',
+        entity_pk: String(params.data.id),
+        correlation_id: request.id
+      });
+    } catch (auditError) {
+      request.log.error(auditError, 'Impossibile registrare audit evento delete paziente');
+    }
+
+    return reply.code(204).send();
+  };
+
   fastify.get('/patients', {
     preHandler: [fastify.requireAuth, fastify.requirePermission('patients.read')]
   }, async (request, reply) => {
@@ -209,25 +235,6 @@ export const patientRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.code(204).send();
   });
 
-  fastify.delete('/patients/:id', {
-    preHandler: [fastify.requireAuth, fastify.requirePermission('patients.write')]
-  }, async (request, reply) => {
-    const params = idParams.safeParse(request.params);
-    if (!params.success) {
-      return reply.code(400).send({ error: 'Invalid params', details: params.error.issues });
-    }
-
-    await deletePatientByLegacyId(params.data.id, request.auth?.userId ?? null);
-
-    await logAuditEvent({
-      actor_user_id: request.auth?.userId ?? null,
-      action: 'soft_delete',
-      entity_schema: 'patient',
-      entity_table: 'patient',
-      entity_pk: String(params.data.id),
-      correlation_id: request.id
-    });
-
-    return reply.code(204).send();
-  });
+  fastify.delete('/patients/:id', { preHandler: patientDeletePreHandler }, handleDeletePatient);
+  fastify.post('/patients/:id/delete', { preHandler: patientDeletePreHandler }, handleDeletePatient);
 };

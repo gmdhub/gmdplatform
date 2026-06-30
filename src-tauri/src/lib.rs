@@ -1,14 +1,21 @@
 // GMD Medical Platform - Tauri Backend
 
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
+#[cfg(not(debug_assertions))]
+use std::process::{Child, Stdio};
+#[cfg(not(debug_assertions))]
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(debug_assertions))]
+use std::time::Instant;
 
 use tauri::Manager;
 
+#[cfg(not(debug_assertions))]
 struct ApiProcessState(Mutex<Option<Child>>);
 
+#[cfg(not(debug_assertions))]
 fn log_embedded_api(message: &str) {
     let log_path = std::env::temp_dir().join("gmd-embedded-api.log");
     let timestamp = std::time::SystemTime::now()
@@ -25,6 +32,7 @@ fn log_embedded_api(message: &str) {
     }
 }
 
+#[cfg(not(debug_assertions))]
 #[cfg(target_os = "windows")]
 fn sanitize_windows_path(input: &str) -> String {
     if let Some(stripped) = input.strip_prefix(r"\\?\") {
@@ -33,6 +41,7 @@ fn sanitize_windows_path(input: &str) -> String {
     input.to_string()
 }
 
+#[cfg(not(debug_assertions))]
 #[cfg(not(target_os = "windows"))]
 fn sanitize_windows_path(input: &str) -> String {
     input.to_string()
@@ -236,6 +245,7 @@ fn show_main_and_close_splash(app: &tauri::AppHandle) {
     }
 }
 
+#[cfg(not(debug_assertions))]
 fn is_local_api_running() -> bool {
     std::net::TcpStream::connect_timeout(
         &std::net::SocketAddr::from(([127, 0, 0, 1], 8787)),
@@ -244,6 +254,7 @@ fn is_local_api_running() -> bool {
     .is_ok()
 }
 
+#[cfg(not(debug_assertions))]
 fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut unique: Vec<PathBuf> = Vec::new();
     for path in paths {
@@ -254,6 +265,7 @@ fn unique_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     unique
 }
 
+#[cfg(not(debug_assertions))]
 fn api_entry_candidates(resource_dir: &Path) -> Vec<PathBuf> {
     let mut base_dirs: Vec<PathBuf> = vec![resource_dir.to_path_buf()];
 
@@ -296,6 +308,7 @@ fn api_entry_candidates(resource_dir: &Path) -> Vec<PathBuf> {
     unique_paths(candidates)
 }
 
+#[cfg(not(debug_assertions))]
 fn existing_api_entries(resource_dir: &Path) -> Vec<PathBuf> {
     api_entry_candidates(resource_dir)
         .into_iter()
@@ -303,6 +316,7 @@ fn existing_api_entries(resource_dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+#[cfg(not(debug_assertions))]
 fn resolve_runtime_env_file(resource_dir: &Path, api_entry: &Path) -> Option<PathBuf> {
     let env_candidates = vec![
         api_entry.parent().map(|parent| parent.join(".env")),
@@ -318,6 +332,7 @@ fn resolve_runtime_env_file(resource_dir: &Path, api_entry: &Path) -> Option<Pat
         .find(|candidate| candidate.exists())
 }
 
+#[cfg(not(debug_assertions))]
 fn process_stdio_for_embedded_api() -> Option<(Stdio, Stdio)> {
     let log_path = std::env::temp_dir().join("gmd-embedded-api-child.log");
     let stdout_file = match std::fs::OpenOptions::new()
@@ -351,6 +366,7 @@ fn process_stdio_for_embedded_api() -> Option<(Stdio, Stdio)> {
     Some((Stdio::from(stdout_file), Stdio::from(stderr_file)))
 }
 
+#[cfg(not(debug_assertions))]
 fn wait_for_local_api_boot(child: &mut Child, timeout: Duration) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
 
@@ -377,6 +393,7 @@ fn wait_for_local_api_boot(child: &mut Child, timeout: Duration) -> Result<(), S
     }
 }
 
+#[cfg(not(debug_assertions))]
 fn node_command_candidates(resource_dir: &Path, api_entry: &Path) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
 
@@ -437,6 +454,7 @@ fn node_command_candidates(resource_dir: &Path, api_entry: &Path) -> Vec<String>
     candidates
 }
 
+#[cfg(not(debug_assertions))]
 fn start_embedded_api_if_needed(app: &tauri::AppHandle) {
     if cfg!(debug_assertions) {
         return;
@@ -590,6 +608,59 @@ fn start_embedded_api_if_needed(app: &tauri::AppHandle) {
 fn set_app_ready(app: tauri::AppHandle) -> Result<(), String> {
     show_main_and_close_splash(&app);
     Ok(())
+}
+
+#[tauri::command]
+async fn disable_user_via_native_http(
+    api_base_url: String,
+    user_id: i64,
+    access_token: String,
+) -> Result<(), String> {
+    let base_url = api_base_url.trim().trim_end_matches('/');
+    if base_url.is_empty() {
+        return Err("API base URL non valido".to_string());
+    }
+    if user_id <= 0 {
+        return Err("ID utente non valido".to_string());
+    }
+    let token = access_token.trim();
+    if token.is_empty() {
+        return Err("Token di accesso mancante".to_string());
+    }
+
+    let url = format!("{base_url}/users/{user_id}/disable");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|error| format!("Impossibile inizializzare client HTTP nativo: {error}"))?;
+
+    let response = client
+        .post(url)
+        .bearer_auth(token)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(|error| format!("Richiesta HTTP nativa fallita: {error}"))?;
+
+    if response.status().is_success() {
+        return Ok(());
+    }
+
+    let status = response.status();
+    let reason = status.canonical_reason().unwrap_or("Errore HTTP");
+    let body = response.text().await.unwrap_or_default();
+    let detail = body.trim();
+    if detail.is_empty() {
+        return Err(format!("Risposta API inattesa: {} {}", status.as_u16(), reason));
+    }
+
+    let preview: String = detail.chars().take(220).collect();
+    Err(format!(
+        "Risposta API inattesa: {} {} - {}",
+        status.as_u16(),
+        reason,
+        preview
+    ))
 }
 
 fn soffice_candidates() -> Vec<String> {
@@ -751,7 +822,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             convert_docx_to_pdf,
             open_file_in_word,
-            set_app_ready
+            set_app_ready,
+            disable_user_via_native_http
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

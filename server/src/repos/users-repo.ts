@@ -10,6 +10,23 @@ export type AppUserRow = {
   updated_at: string;
 };
 
+function isUndefinedColumnError(error: unknown, columnName: string): boolean {
+  const pgError = error as { code?: string; message?: string } | null;
+  if (!pgError || pgError.code !== '42703') {
+    return false;
+  }
+  const message = pgError.message ?? '';
+  return new RegExp(`\\b${columnName}\\b`, 'i').test(message);
+}
+
+function isCompatibilityRetryableError(error: unknown): boolean {
+  const pgError = error as { code?: string } | null;
+  if (!pgError?.code) {
+    return false;
+  }
+  return pgError.code === '42703' || pgError.code === '22P02' || pgError.code === '23514';
+}
+
 export async function listUsers(): Promise<AppUserRow[]> {
   const result = await query<AppUserRow>(
     `SELECT id, username, role, nome, cognome, created_at, updated_at
@@ -159,14 +176,61 @@ export async function updateUserByLegacyId(
 }
 
 export async function disableUserByLegacyId(userLegacyId: number): Promise<void> {
-  const userUpdateRes = await query<{ id: string }>(
-    `UPDATE iam.app_user
-     SET status = 'disabled',
-         disabled_at = now()
-     WHERE legacy_id = $1
-     RETURNING id`,
-    [userLegacyId]
-  );
+  const candidates: Array<{ sql: string; values: unknown[] }> = [
+    {
+      sql: `UPDATE iam.app_user
+            SET status = 'disabled',
+                disabled_at = now()
+            WHERE legacy_id = $1
+            RETURNING id`,
+      values: [userLegacyId]
+    },
+    {
+      sql: `UPDATE iam.app_user
+            SET status = 'disabled'
+            WHERE legacy_id = $1
+            RETURNING id`,
+      values: [userLegacyId]
+    },
+    {
+      sql: `UPDATE iam.app_user
+            SET status = 'inactive'
+            WHERE legacy_id = $1
+            RETURNING id`,
+      values: [userLegacyId]
+    },
+    {
+      sql: `UPDATE iam.app_user
+            SET is_active = FALSE
+            WHERE legacy_id = $1
+            RETURNING id`,
+      values: [userLegacyId]
+    }
+  ];
+
+  let userUpdateRes: { rows: Array<{ id: string }> } | null = null;
+  let lastError: unknown = null;
+
+  for (const candidate of candidates) {
+    try {
+      userUpdateRes = await query<{ id: string }>(candidate.sql, candidate.values);
+      break;
+    } catch (error) {
+      lastError = error;
+      if (!isCompatibilityRetryableError(error)) {
+        throw error;
+      }
+      // Compat mode: prova la query successiva per supportare schemi legacy/non allineati.
+      continue;
+    }
+  }
+
+  if (!userUpdateRes) {
+    if (isUndefinedColumnError(lastError, 'disabled_at')) {
+      throw new Error('Impossibile disabilitare utente: schema utente non compatibile.');
+    }
+    throw lastError instanceof Error ? lastError : new Error('Impossibile disabilitare utente');
+  }
 
   const userId = userUpdateRes.rows[0]?.id;
   if (!userId) {

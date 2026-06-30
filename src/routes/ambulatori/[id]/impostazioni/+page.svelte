@@ -337,7 +337,11 @@
       userToDelete = null;
     } catch (error) {
       console.error('Errore eliminazione utente:', error);
-      toastStore.show('error', 'Errore durante l\'eliminazione dell\'utente');
+      const validationMessage = getApiValidationMessage(error);
+      toastStore.show(
+        'error',
+        validationMessage ?? `Errore durante l'eliminazione dell'utente: ${getErrorMessage(error)}`
+      );
     }
   }
 
@@ -355,6 +359,15 @@
   }
 
   function getErrorMessage(error: unknown): string {
+    if (error instanceof ApiError) {
+      const parts = [error.message.trim()];
+      parts.push(`status ${error.status}`);
+      if (error.requestId) {
+        parts.push(`requestId ${error.requestId}`);
+      }
+      return parts.filter(Boolean).join(' | ');
+    }
+
     if (error instanceof Error && error.message) {
       return error.message;
     }
@@ -1347,28 +1360,28 @@
     line-height: 1;
   }
 
-  .tab-icon .icon-svg {
+  .tab-icon :global(.icon-svg) {
     width: 18px;
     height: 18px;
   }
 
-  .tab .icon-svg,
-  .btn-primary .icon-svg,
-  .btn-secondary .icon-svg,
-  .btn-icon .icon-svg,
-  .integration-icon .icon-svg,
-  .info-icon .icon-svg,
-  .access-denied-icon .icon-svg {
+  .tab :global(.icon-svg),
+  .btn-primary :global(.icon-svg),
+  .btn-secondary :global(.icon-svg),
+  .btn-icon :global(.icon-svg),
+  .integration-icon :global(.icon-svg),
+  .info-icon :global(.icon-svg),
+  .access-denied-icon :global(.icon-svg) {
     color: currentColor;
   }
 
-  .tab .icon-svg:hover,
-  .btn-primary .icon-svg:hover,
-  .btn-secondary .icon-svg:hover,
-  .btn-icon .icon-svg:hover,
-  .integration-icon .icon-svg:hover,
-  .info-icon .icon-svg:hover,
-  .access-denied-icon .icon-svg:hover {
+  .tab :global(.icon-svg:hover),
+  .btn-primary :global(.icon-svg:hover),
+  .btn-secondary :global(.icon-svg:hover),
+  .btn-icon :global(.icon-svg:hover),
+  .integration-icon :global(.icon-svg:hover),
+  .info-icon :global(.icon-svg:hover),
+  .access-denied-icon :global(.icon-svg:hover) {
     color: currentColor;
     transform: none;
   }
@@ -1705,14 +1718,14 @@
     box-shadow: none;
   }
 
-  .btn-primary .icon-svg,
-  .btn-secondary .icon-svg {
+  .btn-primary :global(.icon-svg),
+  .btn-secondary :global(.icon-svg) {
     width: 18px;
     height: 18px;
     flex-shrink: 0;
   }
 
-  .icon-spin {
+  :global(.icon-spin) {
     animation: settings-spin 0.8s linear infinite;
   }
 
@@ -1854,7 +1867,7 @@
     cursor: not-allowed;
   }
 
-  .btn-icon .icon-svg {
+  .btn-icon :global(.icon-svg) {
     width: 16px;
     height: 16px;
   }
@@ -1877,7 +1890,7 @@
     border-radius: var(--radius-full);
   }
 
-  .access-denied-icon .icon-svg {
+  .access-denied-icon :global(.icon-svg) {
     width: 56px;
     height: 56px;
     stroke-width: 1.8;
@@ -1939,7 +1952,7 @@
     flex-shrink: 0;
   }
 
-  .integration-icon .icon-svg {
+  .integration-icon :global(.icon-svg) {
     width: 22px;
     height: 22px;
   }
@@ -2004,7 +2017,7 @@
     flex-shrink: 0;
   }
 
-  .info-icon .icon-svg {
+  .info-icon :global(.icon-svg) {
     width: 16px;
     height: 16px;
   }

@@ -33,7 +33,15 @@ function getDenoEnvObject(): RuntimeEnv | null {
   }
 }
 
+function isDenoRuntime(): boolean {
+  return typeof (globalThis as { Deno?: unknown }).Deno !== 'undefined';
+}
+
 async function loadDotenvIfAvailable(processEnv: RuntimeEnv): Promise<void> {
+  if (isDenoRuntime()) {
+    return;
+  }
+
   const explicitEnvFile = processEnv.GMD_ENV_FILE?.trim();
 
   try {

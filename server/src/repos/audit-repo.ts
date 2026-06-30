@@ -1,5 +1,21 @@
 import { query } from '../db/pool.js';
 
+const uuidRegex =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normalizeUuid(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return uuidRegex.test(normalized) ? normalized : null;
+}
+
 export async function logAuditEvent(input: {
   actor_user_id?: string | null;
   action: string;
@@ -32,14 +48,14 @@ export async function logAuditEvent(input: {
       after_data
     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb)`,
     [
-      input.actor_user_id ?? null,
+      normalizeUuid(input.actor_user_id),
       input.action,
       input.entity_schema,
       input.entity_table,
       input.entity_pk,
       input.ambulatorio_id ?? null,
-      input.patient_id ?? null,
-      input.correlation_id ?? null,
+      normalizeUuid(input.patient_id),
+      normalizeUuid(input.correlation_id),
       input.app_version ?? null,
       input.device_id ?? null,
       input.ip_address ?? null,

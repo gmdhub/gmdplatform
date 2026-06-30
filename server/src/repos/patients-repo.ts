@@ -21,6 +21,14 @@ export type LegacyPatientRow = {
   updated_at: string;
 };
 
+function canRetryDeleteWithoutUpdatedBy(error: unknown): boolean {
+  const pgError = error as { code?: string } | null;
+  if (!pgError?.code) {
+    return false;
+  }
+  return pgError.code === '22P02' || pgError.code === '42703';
+}
+
 export async function listPatients(params: {
   ambulatorioId?: number;
   search?: string;
@@ -192,12 +200,25 @@ export async function updatePatientByLegacyId(
 }
 
 export async function deletePatientByLegacyId(legacyId: number, actorUserId?: string | null): Promise<void> {
-  await query(
-    `UPDATE patient.patient
-     SET deleted_at = now(),
-         updated_by = $1
-     WHERE legacy_id = $2
-       AND deleted_at IS NULL`,
-    [actorUserId ?? null, legacyId]
-  );
+  try {
+    await query(
+      `UPDATE patient.patient
+       SET deleted_at = now(),
+           updated_by = $1
+       WHERE legacy_id = $2
+         AND deleted_at IS NULL`,
+      [actorUserId ?? null, legacyId]
+    );
+  } catch (error) {
+    if (!canRetryDeleteWithoutUpdatedBy(error)) {
+      throw error;
+    }
+    await query(
+      `UPDATE patient.patient
+       SET deleted_at = now()
+       WHERE legacy_id = $1
+         AND deleted_at IS NULL`,
+      [legacyId]
+    );
+  }
 }

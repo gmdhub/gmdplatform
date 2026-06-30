@@ -171,11 +171,12 @@ async function request<T>(
     }
 
     const baseUrl = getApiBaseUrl();
+    const cause = error instanceof Error ? error.message : String(error);
     throw new ApiError(
-      `Impossibile raggiungere l'API remota su ${baseUrl}. Verifica la connessione di rete.`,
+      `Impossibile raggiungere l'API remota su ${baseUrl}. Verifica la connessione di rete. Dettaglio: ${cause}`,
       0,
       {
-        cause: error instanceof Error ? error.message : String(error)
+        cause
       }
     );
   }
@@ -259,5 +260,31 @@ export async function apiPatch<T>(path: string, body?: unknown, options?: Reques
 }
 
 export async function apiDelete<T>(path: string, options?: RequestOptions): Promise<T> {
-  return request<T>(path, { method: 'DELETE' }, options);
+  try {
+    return await request<T>(path, { method: 'DELETE' }, options);
+  } catch (error) {
+    const isRetryableNetworkOrMethodError =
+      error instanceof ApiError &&
+      (error.status === 0 ||
+        error.status === 405 ||
+        error.status === 415 ||
+        error.status === 501 ||
+        error.status === 502 ||
+        error.status === 503 ||
+        error.status === 504);
+
+    if (!isRetryableNetworkOrMethodError) {
+      throw error;
+    }
+
+    const normalizedPath = path.endsWith('/delete') ? path : `${path.replace(/\/+$/, '')}/delete`;
+    return request<T>(
+      normalizedPath,
+      {
+        method: 'POST',
+        body: '{}'
+      },
+      options
+    );
+  }
 }

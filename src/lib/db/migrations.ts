@@ -517,6 +517,46 @@ async function ensureAmbulatorioStandardVisitDurationBounds(db: Database): Promi
   );
 }
 
+async function ensureScaAmbulatorio(db: Database): Promise<void> {
+  const ambulatoriCountRows = await db.select<CountRow[]>(
+    'SELECT COUNT(*) AS count FROM ambulatori'
+  );
+  const ambulatoriCount = Number(ambulatoriCountRows[0]?.count ?? 0);
+  if (ambulatoriCount === 0) {
+    return;
+  }
+
+  const existing = await db.select<Array<{ id: number }>>(
+    'SELECT id FROM ambulatori WHERE nome = ? LIMIT 1',
+    ['Ambulatorio SCA']
+  );
+
+  if (existing.length > 0) {
+    await db.execute(
+      `UPDATE ambulatori
+       SET logo_path = ?,
+           color_primary = ?,
+           color_secondary = ?,
+           color_accent = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      ['/ambulatori/icon_sca.png', '#dc2626', '#ef4444', '#fca5a5', existing[0].id]
+    );
+    return;
+  }
+
+  await db.execute(
+    `INSERT INTO ambulatori (
+      nome,
+      logo_path,
+      color_primary,
+      color_secondary,
+      color_accent
+    ) VALUES (?, ?, ?, ?, ?)`,
+    ['Ambulatorio SCA', '/ambulatori/icon_sca.png', '#dc2626', '#ef4444', '#fca5a5']
+  );
+}
+
 async function ensureVisiteVersioningDefaults(db: Database): Promise<void> {
   await db.execute(
     `UPDATE visite
@@ -742,6 +782,7 @@ export async function applyMigrations(db: Database): Promise<void> {
   await addMissingColumns(db, 'ambulatorio_orari', ambulatorioOrariColumns);
   await ensureVisiteVersioningDefaults(db);
   await ensureAmbulatorioStandardVisitDurationBounds(db);
+  await ensureScaAmbulatorio(db);
   await ensureOperatingWindowDailyCapacityBounds(db);
   await ensureFattoriRischioCvReferencesVisite(db);
   await dropLegacyFixedSlotIndexes(db);

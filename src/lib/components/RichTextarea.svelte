@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onMount, afterUpdate } from 'svelte';
+  import { onMount } from 'svelte';
 
   export let id: string;
   export let value = '';
   export let placeholder = '';
   export let rows = 5;
+  export let preserveNewlines = false;
 
   let contentEditableDiv: HTMLDivElement;
   let isUpdating = false;
@@ -32,11 +33,13 @@
   function htmlToMarkdown(html: string): string {
     let markdown = html;
 
-    // Rimuovi <div> e </div> che contenteditable può aggiungere
-    markdown = markdown.replace(/<div>/g, '\n').replace(/<\/div>/g, '');
-
     // Converti <br> in newline
-    markdown = markdown.replace(/<br\s*\/?>/g, '\n');
+    markdown = markdown.replace(/<br\s*\/?>/gi, '\n');
+
+    // Converti blocchi HTML aggiunti dai diversi browser/WebView in newline.
+    markdown = markdown.replace(/<\/(div|p|li|h[1-6])>\s*<(div|p|li|h[1-6])[^>]*>/gi, '\n');
+    markdown = markdown.replace(/<(div|p|li|h[1-6])[^>]*>/gi, '');
+    markdown = markdown.replace(/<\/(div|p|li|h[1-6])>/gi, '\n');
 
     // Grassetto: <strong>text</strong> -> **text**
     markdown = markdown.replace(/<strong>(.+?)<\/strong>/g, '**$1**');
@@ -52,8 +55,13 @@
     // Rimuovi eventuali tag HTML rimanenti
     markdown = markdown.replace(/<[^>]+>/g, '');
 
-    // Pulisci newline multipli all'inizio e alla fine
-    markdown = markdown.replace(/^\n+|\n+$/g, '');
+    markdown = markdown.replace(/&nbsp;/g, ' ');
+
+    // Nei campi multilinea semplici, i newline finali sono necessari: premere
+    // Invio a fine riga deve restare visibile e diventare la riga successiva.
+    markdown = preserveNewlines
+      ? markdown.replace(/^\n+/, '')
+      : markdown.replace(/^\n+|\n+$/g, '');
 
     return markdown;
   }
@@ -83,6 +91,42 @@
         }
       }
     }
+  }
+
+  function insertLineBreakAtSelection() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+
+    const lineBreak = document.createElement('br');
+    range.insertNode(lineBreak);
+    range.setStartAfter(lineBreak);
+    range.collapse(true);
+
+    selection.removeAllRanges();
+    selection.addRange(range);
+    handleInput();
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (
+      event.defaultPrevented ||
+      !preserveNewlines ||
+      event.key !== 'Enter' ||
+      event.shiftKey ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    insertLineBreakAtSelection();
   }
 
   // Gestisci input dell'utente
@@ -140,6 +184,7 @@
     on:blur
     on:focus
     on:keydown
+    on:keydown={handleKeydown}
     data-placeholder={placeholder}
   ></div>
 </div>

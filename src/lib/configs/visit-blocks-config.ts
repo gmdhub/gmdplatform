@@ -7,6 +7,22 @@ export interface VisitBlockConfig {
   ambulatori: number[]; // IDs degli ambulatori che possono vedere questo blocco
 }
 
+export type VisitBlockAmbulatorioContext = {
+  nome?: string | null;
+  name?: string | null;
+  code?: string | null;
+};
+
+const SCA_VISIBLE_BLOCKS = new Set([
+  'fattori-rischio-cv',
+  'anamnesi',
+  'terapia-domiciliare',
+  'valutazione-odierna',
+  'esami-ematici',
+  'valutazione-rischio-cv',
+  'firme-visita'
+]);
+
 export const visitBlocksConfig: VisitBlockConfig[] = [
   {
     id: 'fattori-rischio-cv',
@@ -18,6 +34,11 @@ export const visitBlocksConfig: VisitBlockConfig[] = [
     id: 'fh-assessment',
     component: 'IpercolesterolemiaFamiliareFH',
     allAmbulatori: true,
+    ambulatori: []
+  },
+  {
+    id: 'anamnesi',
+    component: 'VisitTextSection',
     ambulatori: []
   },
   {
@@ -34,12 +55,14 @@ export const visitBlocksConfig: VisitBlockConfig[] = [
   {
     id: 'terapia-domiciliare',
     component: 'TerapiaDomiciliare',
-    ambulatori: [1] // Solo Ambulatorio Dislipidemie (ID 1)
+    allAmbulatori: true,
+    ambulatori: []
   },
   {
     id: 'valutazione-odierna',
     component: 'ValutazioneOdierna',
-    ambulatori: [1] // Solo Ambulatorio Dislipidemie (ID 1)
+    allAmbulatori: true,
+    ambulatori: []
   },
   {
     id: 'esami-ematici',
@@ -67,15 +90,31 @@ export const visitBlocksConfig: VisitBlockConfig[] = [
   // Altri blocchi verranno aggiunti qui
 ];
 
+function normalizeAmbulatorioText(value: string | null | undefined): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+export function isScaAmbulatorio(context?: VisitBlockAmbulatorioContext | null): boolean {
+  if (!context) {
+    return false;
+  }
+
+  const code = normalizeAmbulatorioText(context.code);
+  const name = normalizeAmbulatorioText(context.nome ?? context.name);
+  return code === 'sca' || name === 'ambulatorio sca';
+}
+
 /**
  * Verifica se un blocco è visibile per un dato ambulatorio
  */
 export function isBlockVisibleForAmbulatorio(
   blockId: string,
-  ambulatorioId: number
+  ambulatorioId: number,
+  ambulatorio?: VisitBlockAmbulatorioContext | null
 ): boolean {
   const block = visitBlocksConfig.find((b) => b.id === blockId);
   if (!block) return false;
+  if (isScaAmbulatorio(ambulatorio)) return SCA_VISIBLE_BLOCKS.has(blockId);
   if (block.allAmbulatori) return true;
   return block.ambulatori.includes(ambulatorioId);
 }
@@ -83,8 +122,11 @@ export function isBlockVisibleForAmbulatorio(
 /**
  * Ottiene tutti i blocchi visibili per un ambulatorio
  */
-export function getVisibleBlocksForAmbulatorio(ambulatorioId: number): string[] {
+export function getVisibleBlocksForAmbulatorio(
+  ambulatorioId: number,
+  ambulatorio?: VisitBlockAmbulatorioContext | null
+): string[] {
   return visitBlocksConfig
-    .filter((block) => block.allAmbulatori || block.ambulatori.includes(ambulatorioId))
+    .filter((block) => isBlockVisibleForAmbulatorio(block.id, ambulatorioId, ambulatorio))
     .map((block) => block.id);
 }

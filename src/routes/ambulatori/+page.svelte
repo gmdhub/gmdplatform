@@ -87,23 +87,28 @@
       {:else}
         <div class="ambulatori-grid">
           {#each ambulatori as ambulatorio}
-            <Card hover clickable on:click={() => selectAmbulatorio(ambulatorio)}>
-              <div class="ambulatorio-card">
-                <div class="ambulatorio-icon">
-                  {#if ambulatorio.logo_path}
-                    <img src={ambulatorio.logo_path} alt={ambulatorio.nome} class="ambulatorio-logo" />
-                  {:else}
-                    <div
-                      class="ambulatorio-icon-fallback"
-                      style="background: linear-gradient(135deg, {ambulatorio.color_primary} 0%, {ambulatorio.color_secondary} 100%);"
-                    >
-                      <span class="icon-letter">{ambulatorio.nome[0]}</span>
-                    </div>
-                  {/if}
+            <div
+              class="ambulatorio-card-shell"
+              style="--ambulatorio-primary: {ambulatorio.color_primary}; --ambulatorio-secondary: {ambulatorio.color_secondary}; --ambulatorio-accent: {ambulatorio.color_accent};"
+            >
+              <Card hover clickable on:click={() => selectAmbulatorio(ambulatorio)}>
+                <div class="ambulatorio-card">
+                  <div class="ambulatorio-icon">
+                    {#if ambulatorio.logo_path}
+                      <img src={ambulatorio.logo_path} alt={ambulatorio.nome} class="ambulatorio-logo" />
+                    {:else}
+                      <div
+                        class="ambulatorio-icon-fallback"
+                        style="background: linear-gradient(135deg, {ambulatorio.color_primary} 0%, {ambulatorio.color_secondary} 100%);"
+                      >
+                        <span class="icon-letter">{ambulatorio.nome[0]}</span>
+                      </div>
+                    {/if}
+                  </div>
+                  <h3 class="ambulatorio-name">{ambulatorio.nome}</h3>
                 </div>
-                <h3 class="ambulatorio-name">{ambulatorio.nome}</h3>
-              </div>
-            </Card>
+              </Card>
+            </div>
           {/each}
         </div>
       {/if}
@@ -187,6 +192,7 @@
     margin: 0 auto;
     grid-template-columns: repeat(auto-fit, minmax(280px, 340px));
     justify-content: center;
+    align-items: stretch;
     gap: var(--space-6);
     animation: fadeIn 0.4s ease-out;
   }
@@ -195,26 +201,54 @@
     border-radius: 32px;
   }
 
+  .ambulatorio-card-shell {
+    height: 100%;
+  }
+
+  .ambulatorio-card-shell :global(.card) {
+    height: 280px;
+    border-color: color-mix(in srgb, var(--ambulatorio-primary) 12%, var(--color-border));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ambulatorio-card-shell:hover :global(.card.card-clickable),
+  .ambulatorio-card-shell:focus-within :global(.card.card-clickable) {
+    border-color: var(--ambulatorio-primary);
+    box-shadow:
+      0 18px 40px color-mix(in srgb, var(--ambulatorio-primary) 18%, transparent),
+      0 0 0 3px color-mix(in srgb, var(--ambulatorio-primary) 16%, transparent);
+  }
+
+  .ambulatorio-card-shell:hover .ambulatorio-name,
+  .ambulatorio-card-shell:focus-within .ambulatorio-name {
+    color: var(--ambulatorio-primary);
+  }
+
   .ambulatorio-card {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--space-4);
+    justify-content: center;
+    gap: var(--space-3);
     padding: var(--space-4) 0;
+    width: 100%;
+    height: 100%;
   }
 
   .ambulatorio-icon {
-    width: 140px;
-    height: 140px;
+    width: 168px;
+    height: 168px;
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .ambulatorio-logo {
-    width: 100%;
-    height: 100%;
+    width: 168px;
+    height: 168px;
     object-fit: contain;
   }
 
@@ -239,6 +273,12 @@
     color: var(--color-text);
     text-align: center;
     margin: 0;
+    min-height: 3.5rem;
+    line-height: 1.25;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow-wrap: anywhere;
   }
 
   @keyframes fadeIn {

@@ -78,7 +78,8 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "../src/lib/templates/template_dislip.docx"
+      "../src/lib/templates/template_dislip.docx",
+      "../src/lib/templates/template_sca.docx"
     ],
     "icon": [
       "icons/32x32.png",

@@ -1,10 +1,14 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { ambulatorioStore } from '$lib/stores/ambulatorio';
   import { getAllPazienti } from '$lib/db/pazienti';
   import { getFattoriRischioCVByVisitaId } from '$lib/db/fattori-rischio-cv';
   import { previewAppuntamentoWrite } from '$lib/db/appuntamenti';
   import { getPreviousEsamiEmaticiByPaziente } from '$lib/db/visite';
-  import { isBlockVisibleForAmbulatorio } from '$lib/configs/visit-blocks-config';
+  import {
+    isBlockVisibleForAmbulatorio,
+    isScaAmbulatorio
+  } from '$lib/configs/visit-blocks-config';
   import type {
     AppuntamentoWriteOptions,
     AppuntamentoWriteRequirements,
@@ -60,6 +64,8 @@
   let filteredPazienti: Paziente[] = [];
   let loadedStateKey = '';
   let previousEsamiLookupKey = '';
+  $: currentAmbulatorio = $ambulatorioStore.current;
+  $: isScaVisitAmbulatorio = isScaAmbulatorio(currentAmbulatorio);
   const tipoVisitaOptions = [
     { value: 'Prima visita', label: 'Prima visita' },
     { value: 'Controllo', label: 'Controllo' }
@@ -67,6 +73,10 @@
 
   function normalizeTipoVisita(value: string | null | undefined): string {
     return tipoVisitaOptions.some((option) => option.value === value) ? value ?? '' : '';
+  }
+
+  function isVisitBlockVisible(blockId: string): boolean {
+    return isBlockVisibleForAmbulatorio(blockId, ambulatorioId, currentAmbulatorio);
   }
 
   function getTodayVisitDate(): string {
@@ -394,7 +404,9 @@
       anamnesi: record.anamnesi || '',
       esame_obiettivo: record.esame_obiettivo || '',
       diagnosi: record.diagnosi || '',
-      terapia: record.terapia || '',
+      terapia: isScaVisitAmbulatorio
+        ? record.terapia_domiciliare || record.terapia || ''
+        : record.terapia || '',
       note: record.note || ''
     };
 
@@ -489,21 +501,25 @@
       return;
     }
 
-    if (fattoriRischio.diabete && !fattoriRischio.diabete_tipo) {
+    if (isVisitBlockVisible('fattori-rischio-cv') && fattoriRischio.diabete && !fattoriRischio.diabete_tipo) {
       alert('Seleziona il tipo di diabete mellito');
       return;
     }
 
-    const fhError = validateFHAssessment(fhAssessment);
-    if (fhError) {
-      alert(fhError);
-      return;
+    if (isVisitBlockVisible('fh-assessment')) {
+      const fhError = validateFHAssessment(fhAssessment);
+      if (fhError) {
+        alert(fhError);
+        return;
+      }
     }
 
-    const terapiaError = validateTerapiaIpolipemizzante(terapiaIpolipemizzante);
-    if (terapiaError) {
-      alert(terapiaError);
-      return;
+    if (isVisitBlockVisible('terapia-ipolipemizzante')) {
+      const terapiaError = validateTerapiaIpolipemizzante(terapiaIpolipemizzante);
+      if (terapiaError) {
+        alert(terapiaError);
+        return;
+      }
     }
 
     const followUpDateTime = (pianificazioneFollowUp.dataOraProssimaVisita || '').trim();
@@ -526,9 +542,11 @@
       }
     }
 
-    const hasEsamiEmatici = Object.values(esamiEmatici).some((value) => String(value || '').trim());
+    const hasEsamiEmatici = isVisitBlockVisible('esami-ematici') && Object.values(esamiEmatici).some((value) => String(value || '').trim());
     const esamiEmaticiPayload = hasEsamiEmatici ? serializeEsamiEmatici(esamiEmatici) : undefined;
-    valutazioneRischioCV = normalizeValutazioneRischioCV(valutazioneRischioCV, esamiEmatici);
+    if (isVisitBlockVisible('valutazione-rischio-cv')) {
+      valutazioneRischioCV = normalizeValutazioneRischioCV(valutazioneRischioCV, esamiEmatici);
+    }
 
     const visitaPayload = {
       ...(visita?.id ? { id: visita.id } : {}),
@@ -543,16 +561,17 @@
       bmi: formData.bmi ? parseFloat(formData.bmi) : undefined,
       bsa: formData.bsa ? parseFloat(formData.bsa) : undefined,
       esami_ematici: esamiEmaticiPayload,
-      valutazione_rischio_cv: serializeValutazioneRischioCV(valutazioneRischioCV, esamiEmatici),
-      fh_assessment: serializeFHAssessment(fhAssessment),
-      terapia_ipolipemizzante: serializeTerapiaIpolipemizzante(terapiaIpolipemizzante),
-      firme_visita: serializeFirmeVisita(firmeVisita),
+      valutazione_rischio_cv: isVisitBlockVisible('valutazione-rischio-cv') ? serializeValutazioneRischioCV(valutazioneRischioCV, esamiEmatici) : undefined,
+      fh_assessment: isVisitBlockVisible('fh-assessment') ? serializeFHAssessment(fhAssessment) : undefined,
+      terapia_ipolipemizzante: isVisitBlockVisible('terapia-ipolipemizzante') ? serializeTerapiaIpolipemizzante(terapiaIpolipemizzante) : undefined,
+      firme_visita: isVisitBlockVisible('firme-visita') ? serializeFirmeVisita(firmeVisita) : undefined,
       pianificazione_followup: serializePianificazioneFollowUp(pianificazioneFollowUp),
       conclusioni: conclusioni || undefined,
       anamnesi: formData.anamnesi || undefined,
       esame_obiettivo: formData.esame_obiettivo || undefined,
       diagnosi: formData.diagnosi || undefined,
-      terapia: formData.terapia || undefined,
+      terapia_domiciliare: isScaVisitAmbulatorio ? formData.terapia || undefined : undefined,
+      terapia: isScaVisitAmbulatorio ? undefined : formData.terapia || undefined,
       note: formData.note || undefined
     };
 
@@ -715,7 +734,7 @@
         </div>
 
         <div class="blocks-stack">
-          {#if isBlockVisibleForAmbulatorio('fattori-rischio-cv', ambulatorioId)}
+          {#if isVisitBlockVisible('fattori-rischio-cv')}
             <FattoriRischioCV
               bind:familiarita={fattoriRischio.familiarita}
               bind:familiarita_note={fattoriRischio.familiarita_note}
@@ -731,7 +750,7 @@
             />
           {/if}
 
-          {#if isBlockVisibleForAmbulatorio('fh-assessment', ambulatorioId)}
+          {#if isVisitBlockVisible('fh-assessment')}
             <IpercolesterolemiaFamiliareFH
               bind:enabled={fhAssessment.enabled}
               bind:familyHistoryOnePoint={fhAssessment.familyHistoryOnePoint}
@@ -747,11 +766,11 @@
             />
           {/if}
 
-          {#if isBlockVisibleForAmbulatorio('terapia-ipolipemizzante', ambulatorioId)}
+          {#if isVisitBlockVisible('terapia-ipolipemizzante')}
             <TerapiaIpolipemizzante bind:terapia={terapiaIpolipemizzante} />
           {/if}
 
-          {#if isBlockVisibleForAmbulatorio('esami-ematici', ambulatorioId)}
+          {#if isVisitBlockVisible('esami-ematici')}
             <EsamiEmatici
               bind:esami={esamiEmatici}
               eta={etaPaziente}
@@ -761,7 +780,7 @@
             />
           {/if}
 
-          {#if isBlockVisibleForAmbulatorio('valutazione-rischio-cv', ambulatorioId)}
+          {#if isVisitBlockVisible('valutazione-rischio-cv')}
             <ValutazioneRischioCardiovascolare
               bind:valutazione={valutazioneRischioCV}
               esami={esamiEmatici}
@@ -802,12 +821,14 @@
         </div>
 
         <div class="form-group">
-          <label for="terapia">Terapia</label>
+          <label for="terapia">
+            {isScaVisitAmbulatorio ? 'Terapia domiciliare' : 'Terapia'}
+          </label>
           <textarea
             id="terapia"
             bind:value={formData.terapia}
             rows="3"
-            placeholder="Terapia prescritta"
+            placeholder={isScaVisitAmbulatorio ? 'Terapia domiciliare' : 'Terapia prescritta'}
           ></textarea>
         </div>
 
@@ -827,7 +848,7 @@
           ambulatorioId={ambulatorioId}
         />
 
-        {#if isBlockVisibleForAmbulatorio('firme-visita', ambulatorioId)}
+        {#if isVisitBlockVisible('firme-visita')}
           <FirmeVisita bind:firme={firmeVisita} />
         {/if}
 

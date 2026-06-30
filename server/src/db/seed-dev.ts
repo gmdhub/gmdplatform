@@ -77,6 +77,7 @@ async function ensureBaseAmbulatori(): Promise<AmbulatorioRow[]> {
      VALUES
        ('DISLIP', 'Ambulatorio Cardiologico delle Dislipidemie', TRUE),
        ('ORTO', 'Ortopedia', TRUE),
+       ('SCA', 'Ambulatorio SCA', TRUE),
        ('DHR', 'Day Hospital Riabilitativa', TRUE)
      ON CONFLICT (code)
      DO UPDATE SET
@@ -87,7 +88,7 @@ async function ensureBaseAmbulatori(): Promise<AmbulatorioRow[]> {
   const result = await query<AmbulatorioRow>(
     `SELECT id, code, name
      FROM org.ambulatorio
-     WHERE code IN ('DISLIP', 'ORTO', 'DHR')
+     WHERE code IN ('DISLIP', 'ORTO', 'SCA', 'DHR')
      ORDER BY id ASC`
   );
 

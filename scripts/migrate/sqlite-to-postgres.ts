@@ -399,7 +399,7 @@ async function main() {
 
     await pg.query(
       `DELETE FROM org.ambulatorio a
-       WHERE a.code IN ('DISLIP', 'ORTO', 'DHR')
+       WHERE a.code IN ('DISLIP', 'ORTO', 'SCA', 'DHR')
          AND NOT EXISTS (
            SELECT 1
            FROM patient.patient p

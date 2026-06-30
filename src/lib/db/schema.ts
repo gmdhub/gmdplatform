@@ -24,6 +24,13 @@ const ambulatoriDemo = [
     accent: '#6ee7b7'
   },
   {
+    nome: 'Ambulatorio SCA',
+    logo_path: '/ambulatori/icon_sca.png',
+    primary: '#dc2626',
+    secondary: '#ef4444',
+    accent: '#fca5a5'
+  },
+  {
     nome: 'Day Hospital Riabilitativa',
     logo_path: '/ambulatori/icon_dhr.png',
     primary: '#03a19e',

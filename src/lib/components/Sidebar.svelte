@@ -219,12 +219,12 @@
   }
 
   .nav-item:hover:not(.disabled) {
-    background-color: var(--color-bg-secondary);
+    background-color: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-secondary));
     color: var(--color-text);
   }
 
   .nav-item.active {
-    background-color: var(--color-bg-secondary);
+    background-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-secondary));
     color: var(--color-text);
     font-weight: 500;
     border-left: 3px solid var(--color-primary);
@@ -241,16 +241,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.7;
+    color: var(--color-primary);
+    opacity: 0.78;
   }
 
   .nav-item.active .nav-icon {
+    color: var(--color-secondary);
     opacity: 1;
   }
 
   .nav-icon :global(.icon-svg) {
     width: 20px;
     height: 20px;
+    color: currentColor;
   }
 
   .nav-label {

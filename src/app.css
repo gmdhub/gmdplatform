@@ -28,8 +28,8 @@
   --color-info: #3b82f6;
 
   /* Icone */
-  --color-icon: #1e40af; /* Blu più scuro per le icone */
-  --color-icon-hover: #1e3a8a; /* Blu ancora più scuro per hover */
+  --color-icon: var(--color-primary);
+  --color-icon-hover: var(--color-secondary);
 
   /* Tipografia */
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -354,13 +354,13 @@ button[type="submit"]:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--color-bg-secondary);
+  background-color: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-secondary));
   border-radius: var(--radius-lg);
   transition: background-color var(--transition-fast), transform var(--transition-fast);
 }
 
 .icon-container:hover {
-  background-color: var(--color-bg-tertiary);
+  background-color: color-mix(in srgb, var(--color-primary) 16%, var(--color-bg-tertiary));
   transform: translateY(-2px);
 }
 

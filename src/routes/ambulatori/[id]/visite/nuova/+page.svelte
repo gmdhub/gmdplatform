@@ -4,6 +4,7 @@
   import { page } from '$app/stores';
   import { invoke } from '@tauri-apps/api/core';
   import { authStore } from '$lib/stores/auth';
+  import { ambulatorioStore } from '$lib/stores/ambulatorio';
   import { sidebarCollapsedStore } from '$lib/stores/sidebar';
   import { toastStore } from '$lib/stores/toast';
   import { getAllPazienti } from '$lib/db/pazienti';
@@ -39,7 +40,11 @@
   import Ecocardiografia from '$lib/components/visit-blocks/Ecocardiografia.svelte';
   import Conclusioni from '$lib/components/visit-blocks/Conclusioni.svelte';
   import FirmeVisita from '$lib/components/visit-blocks/FirmeVisita.svelte';
-  import { isBlockVisibleForAmbulatorio } from '$lib/configs/visit-blocks-config';
+  import VisitTextSection from '$lib/components/visit-blocks/VisitTextSection.svelte';
+  import {
+    isBlockVisibleForAmbulatorio,
+    isScaAmbulatorio
+  } from '$lib/configs/visit-blocks-config';
   import {
     createEmptyEsamiEmatici,
     createEmptyFHAssessment,
@@ -79,6 +84,8 @@
   let sourceFollowUpAppointmentId: number | undefined;
 
   $: user = $authStore.user;
+  $: currentAmbulatorio = $ambulatorioStore.current;
+  $: isScaVisitAmbulatorio = isScaAmbulatorio(currentAmbulatorio);
   $: ambulatorioId = parseInt($page.params.id || '0');
   $: cameFromDashboard = $page.url.searchParams.get('from') === 'dashboard';
   $: preselectedPazienteId = parseInt($page.url.searchParams.get('pazienteId') || '0');
@@ -435,13 +442,13 @@
       anamnesi: latestVisita.anamnesi || '',
       esame_obiettivo: latestVisita.esame_obiettivo || '',
       diagnosi: latestVisita.diagnosi || '',
-      terapia: latestVisita.terapia || '',
+      terapia: isScaVisitAmbulatorio ? '' : latestVisita.terapia || '',
       note: latestVisita.note || ''
     };
 
     anamnesiCardiologica = latestVisita.anamnesi_cardiologica || '';
     terapiaIpolipemizzante = parseTerapiaIpolipemizzante(latestVisita.terapia_ipolipemizzante);
-    terapiaDomiciliare = latestVisita.terapia_domiciliare || '';
+    terapiaDomiciliare = latestVisita.terapia_domiciliare || (isScaVisitAmbulatorio ? latestVisita.terapia || '' : '');
     valutazioneOdierna = latestVisita.valutazione_odierna || '';
     esamiEmatici = createEmptyEsamiEmatici();
     valutazioneRischioCV = parseValutazioneRischioCV(latestVisita.valutazione_rischio_cv, esamiEmatici);
@@ -474,13 +481,13 @@
       anamnesi: visita.anamnesi || '',
       esame_obiettivo: visita.esame_obiettivo || '',
       diagnosi: visita.diagnosi || '',
-      terapia: visita.terapia || '',
+      terapia: isScaVisitAmbulatorio ? '' : visita.terapia || '',
       note: visita.note || ''
     };
 
     anamnesiCardiologica = visita.anamnesi_cardiologica || '';
     terapiaIpolipemizzante = parseTerapiaIpolipemizzante(visita.terapia_ipolipemizzante);
-    terapiaDomiciliare = visita.terapia_domiciliare || '';
+    terapiaDomiciliare = visita.terapia_domiciliare || (isScaVisitAmbulatorio ? visita.terapia || '' : '');
     valutazioneOdierna = visita.valutazione_odierna || '';
     valutazioneRischioCV = parseValutazioneRischioCV(visita.valutazione_rischio_cv, esamiEmatici);
     ecocardiografia = parseEcocardiografia(visita.ecocardiografia);
@@ -818,6 +825,10 @@
     return 'Errore sconosciuto';
   }
 
+  function isVisitBlockVisible(blockId: string): boolean {
+    return isBlockVisibleForAmbulatorio(blockId, ambulatorioId, currentAmbulatorio);
+  }
+
   function getReportErrorMessage(error: unknown): string {
     const message = getErrorMessage(error);
     return message.startsWith('Errore') ? message : `Errore referto: ${message}`;
@@ -965,21 +976,25 @@
       return;
     }
 
-    if (fattoriRischio.diabete && !fattoriRischio.diabete_tipo) {
+    if (isVisitBlockVisible('fattori-rischio-cv') && fattoriRischio.diabete && !fattoriRischio.diabete_tipo) {
       toastStore.show('error', 'Seleziona il tipo di diabete mellito');
       return;
     }
 
-    const fhAssessmentError = validateFHAssessment(fhAssessment);
-    if (fhAssessmentError) {
-      toastStore.show('error', fhAssessmentError);
-      return;
+    if (isVisitBlockVisible('fh-assessment')) {
+      const fhAssessmentError = validateFHAssessment(fhAssessment);
+      if (fhAssessmentError) {
+        toastStore.show('error', fhAssessmentError);
+        return;
+      }
     }
 
-    const terapiaIpolipemizzanteError = validateTerapiaIpolipemizzante(terapiaIpolipemizzante);
-    if (terapiaIpolipemizzanteError) {
-      toastStore.show('error', terapiaIpolipemizzanteError);
-      return;
+    if (isVisitBlockVisible('terapia-ipolipemizzante')) {
+      const terapiaIpolipemizzanteError = validateTerapiaIpolipemizzante(terapiaIpolipemizzante);
+      if (terapiaIpolipemizzanteError) {
+        toastStore.show('error', terapiaIpolipemizzanteError);
+        return;
+      }
     }
 
     const followUpDateTime = (pianificazioneFollowUp.dataOraProssimaVisita || '').trim();
@@ -1017,15 +1032,21 @@
     loading = true;
     savingWithReport = generateReport;
     try {
-      const hasEsamiEmatici = Object.values(esamiEmatici).some((value) => String(value || '').trim());
+      const hasEsamiEmatici = isVisitBlockVisible('esami-ematici') && Object.values(esamiEmatici).some((value) => String(value || '').trim());
       const esamiEmaticiPayload = hasEsamiEmatici ? serializeEsamiEmatici(esamiEmatici) : undefined;
 
-      const hasEcocardiografia = Object.values(ecocardiografia).some((value) => String(value || '').trim());
+      const hasEcocardiografia = isVisitBlockVisible('ecocardiografia') && Object.values(ecocardiografia).some((value) => String(value || '').trim());
       const ecocardiografiaPayload = hasEcocardiografia ? JSON.stringify(ecocardiografia) : undefined;
 
-      fhAssessment = normalizeFHAssessment(fhAssessment);
-      terapiaIpolipemizzante = normalizeTerapiaIpolipemizzante(terapiaIpolipemizzante);
-      valutazioneRischioCV = normalizeValutazioneRischioCV(valutazioneRischioCV, esamiEmatici);
+      if (isVisitBlockVisible('fh-assessment')) {
+        fhAssessment = normalizeFHAssessment(fhAssessment);
+      }
+      if (isVisitBlockVisible('terapia-ipolipemizzante')) {
+        terapiaIpolipemizzante = normalizeTerapiaIpolipemizzante(terapiaIpolipemizzante);
+      }
+      if (isVisitBlockVisible('valutazione-rischio-cv')) {
+        valutazioneRischioCV = normalizeValutazioneRischioCV(valutazioneRischioCV, esamiEmatici);
+      }
 
       const visitaPayload = {
         ambulatorio_id: ambulatorioId,
@@ -1038,21 +1059,21 @@
         peso: formData.peso ? parseFloat(formData.peso) : undefined,
         bmi: formData.bmi ? parseFloat(formData.bmi) : undefined,
         bsa: formData.bsa ? parseFloat(formData.bsa) : undefined,
-        anamnesi_cardiologica: anamnesiCardiologica || undefined,
-        terapia_ipolipemizzante: serializeTerapiaIpolipemizzante(terapiaIpolipemizzante),
-        terapia_domiciliare: terapiaDomiciliare || undefined,
-        valutazione_odierna: valutazioneOdierna || undefined,
+        anamnesi_cardiologica: isVisitBlockVisible('anamnesi-cardiologica') ? anamnesiCardiologica || undefined : undefined,
+        terapia_ipolipemizzante: isVisitBlockVisible('terapia-ipolipemizzante') ? serializeTerapiaIpolipemizzante(terapiaIpolipemizzante) : undefined,
+        terapia_domiciliare: isVisitBlockVisible('terapia-domiciliare') ? terapiaDomiciliare || undefined : undefined,
+        valutazione_odierna: isVisitBlockVisible('valutazione-odierna') ? valutazioneOdierna || undefined : undefined,
         esami_ematici: esamiEmaticiPayload,
-        valutazione_rischio_cv: serializeValutazioneRischioCV(valutazioneRischioCV, esamiEmatici),
+        valutazione_rischio_cv: isVisitBlockVisible('valutazione-rischio-cv') ? serializeValutazioneRischioCV(valutazioneRischioCV, esamiEmatici) : undefined,
         ecocardiografia: ecocardiografiaPayload,
-        fh_assessment: serializeFHAssessment(fhAssessment),
-        firme_visita: serializeFirmeVisita(firmeVisita),
+        fh_assessment: isVisitBlockVisible('fh-assessment') ? serializeFHAssessment(fhAssessment) : undefined,
+        firme_visita: isVisitBlockVisible('firme-visita') ? serializeFirmeVisita(firmeVisita) : undefined,
         pianificazione_followup: serializePianificazioneFollowUp(pianificazioneFollowUp),
         conclusioni: conclusioni || undefined,
         anamnesi: formData.anamnesi || undefined,
         esame_obiettivo: formData.esame_obiettivo || undefined,
         diagnosi: formData.diagnosi || undefined,
-        terapia: formData.terapia || undefined,
+        terapia: isScaVisitAmbulatorio ? undefined : formData.terapia || undefined,
         note: formData.note || undefined
       };
 
@@ -1101,6 +1122,7 @@
         try {
           const { generateVisitaReferto } = await import('$lib/reports/generateVisitaReferto');
           const reportResult = await generateVisitaReferto({
+            ambulatorioId,
             paziente: selectedPaziente,
             formData: {
               data_visita: formData.data_visita,
@@ -1123,9 +1145,10 @@
               fumo_ex_eta: fattoriRischio.fumo_ex_eta
             },
             fhAssessment,
-            anamnesiPatologicaRemota: anamnesiCardiologica,
+            anamnesiPatologicaRemota: isScaVisitAmbulatorio ? formData.anamnesi : anamnesiCardiologica,
             terapiaIpolipemizzante,
             terapiaDomiciliare,
+            valutazioneOdierna,
             esamiEmatici,
             valutazioneRischioCV,
             conclusioni,
@@ -1455,8 +1478,7 @@
       </div>
     </Card>
 
-    <!-- Fattori di Rischio CV (solo per Ambulatorio Dislipidemie) -->
-    {#if isBlockVisibleForAmbulatorio('fattori-rischio-cv', ambulatorioId)}
+    {#if isVisitBlockVisible('fattori-rischio-cv')}
       <FattoriRischioCV
         bind:familiarita={fattoriRischio.familiarita}
         bind:familiarita_note={fattoriRischio.familiarita_note}
@@ -1472,7 +1494,16 @@
       />
     {/if}
 
-    {#if isBlockVisibleForAmbulatorio('fh-assessment', ambulatorioId)}
+    {#if isVisitBlockVisible('anamnesi')}
+      <VisitTextSection
+        title="Anamnesi"
+        id="anamnesi"
+        bind:value={formData.anamnesi}
+        placeholder="Inserisci l'anamnesi..."
+      />
+    {/if}
+
+    {#if isVisitBlockVisible('fh-assessment')}
       <IpercolesterolemiaFamiliareFH
         bind:enabled={fhAssessment.enabled}
         bind:familyHistoryOnePoint={fhAssessment.familyHistoryOnePoint}
@@ -1489,26 +1520,34 @@
     {/if}
 
     <!-- Anamnesi Patologica Remota (solo per Ambulatorio Dislipidemie) -->
-    {#if isBlockVisibleForAmbulatorio('anamnesi-cardiologica', ambulatorioId)}
+    {#if isVisitBlockVisible('anamnesi-cardiologica')}
       <AnamnesiCardiologica bind:anamnesi_cardiologica={anamnesiCardiologica} />
     {/if}
 
-    {#if isBlockVisibleForAmbulatorio('terapia-ipolipemizzante', ambulatorioId)}
+    {#if isVisitBlockVisible('terapia-ipolipemizzante')}
       <TerapiaIpolipemizzante bind:terapia={terapiaIpolipemizzante} />
     {/if}
 
-    <!-- Terapia Domiciliare (solo per Ambulatorio Dislipidemie) -->
-    {#if isBlockVisibleForAmbulatorio('terapia-domiciliare', ambulatorioId)}
-      <TerapiaDomiciliare bind:terapia_domiciliare={terapiaDomiciliare} />
+    <!-- Terapia Domiciliare -->
+    {#if isVisitBlockVisible('terapia-domiciliare')}
+      {#if isScaVisitAmbulatorio}
+        <VisitTextSection
+          title="Terapia domiciliare"
+          id="terapia_domiciliare"
+          bind:value={terapiaDomiciliare}
+          placeholder="Inserisci la terapia domiciliare..."
+        />
+      {:else}
+        <TerapiaDomiciliare bind:terapia_domiciliare={terapiaDomiciliare} />
+      {/if}
     {/if}
 
-    <!-- Valutazione Odierna (solo per Ambulatorio Dislipidemie) -->
-    {#if isBlockVisibleForAmbulatorio('valutazione-odierna', ambulatorioId)}
+    <!-- Valutazione Odierna -->
+    {#if isVisitBlockVisible('valutazione-odierna')}
       <ValutazioneOdierna bind:valutazione_odierna={valutazioneOdierna} />
     {/if}
 
-    <!-- Esami Ematici (solo per Ambulatorio Dislipidemie) -->
-    {#if isBlockVisibleForAmbulatorio('esami-ematici', ambulatorioId)}
+    {#if isVisitBlockVisible('esami-ematici')}
       <EsamiEmatici
         bind:esami={esamiEmatici}
         eta={etaPaziente}
@@ -1518,7 +1557,7 @@
       />
     {/if}
 
-    {#if isBlockVisibleForAmbulatorio('valutazione-rischio-cv', ambulatorioId)}
+    {#if isVisitBlockVisible('valutazione-rischio-cv')}
       <ValutazioneRischioCardiovascolare
         bind:valutazione={valutazioneRischioCV}
         esami={esamiEmatici}
@@ -1528,7 +1567,7 @@
     {/if}
 
     <!-- Ecocardiografia (solo per Ambulatorio Dislipidemie) -->
-    {#if isBlockVisibleForAmbulatorio('ecocardiografia', ambulatorioId)}
+    {#if isVisitBlockVisible('ecocardiografia')}
       <Ecocardiografia bind:eco={ecocardiografia} />
     {/if}
 
@@ -1540,7 +1579,7 @@
       showSlotSearchMonthsSelector={true}
     />
 
-    {#if isBlockVisibleForAmbulatorio('firme-visita', ambulatorioId)}
+    {#if isVisitBlockVisible('firme-visita')}
       <FirmeVisita bind:firme={firmeVisita} />
     {/if}
 

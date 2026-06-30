@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
 import { join, resolveResource } from '@tauri-apps/api/path';
 import { rischioCVOptions } from '$lib/configs/clinical-options';
+import { isScaAmbulatorio } from '$lib/configs/visit-blocks-config';
 import { getAmbulatorioById } from '$lib/db/ambulatori';
 import { isApiDataProvider } from '$lib/db/config';
 import { getVisitaById } from '$lib/db/visite';
@@ -20,9 +21,32 @@ import type {
 import { createReportMetadata } from '$lib/services/report-service';
 import { getReportBaseDirectory, sanitizeReportFolderName } from '$lib/utils/report-storage';
 
-const REPORT_TITLE = 'AMBULATORIO CARDIOLOGICO DELLE DISLIPIDEMIE';
-const TEMPLATE_URL = new URL('../templates/template_dislip.docx', import.meta.url).href;
-const TEMPLATE_RESOURCE_NAME = 'template_dislip.docx';
+type ReportTemplateDescriptor = {
+  code: string;
+  name: string;
+  version: number;
+  title: string;
+  url: string;
+  resourceName: string;
+};
+
+const DISLIPIDEMIE_TEMPLATE: ReportTemplateDescriptor = {
+  code: 'template_dislip',
+  name: 'Template Dislipidemie',
+  version: 1,
+  title: 'AMBULATORIO CARDIOLOGICO DELLE DISLIPIDEMIE',
+  url: new URL('../templates/template_dislip.docx', import.meta.url).href,
+  resourceName: 'template_dislip.docx'
+};
+
+const SCA_TEMPLATE: ReportTemplateDescriptor = {
+  code: 'template_sca',
+  name: 'Template SCA',
+  version: 1,
+  title: 'AMBULATORIO SCA',
+  url: new URL('../templates/template_sca.docx', import.meta.url).href,
+  resourceName: 'template_sca.docx'
+};
 
 type TitoloToken = TitoloFirmaMedico | '';
 
@@ -59,6 +83,7 @@ type ReportFattoriRischio = {
 };
 
 export type GenerateVisitaRefertoInput = {
+  ambulatorioId?: number;
   paziente: Paziente;
   formData: ReportFormData;
   fattoriRischio: ReportFattoriRischio;
@@ -66,6 +91,7 @@ export type GenerateVisitaRefertoInput = {
   anamnesiPatologicaRemota: string;
   terapiaIpolipemizzante: TerapiaIpolipemizzante;
   terapiaDomiciliare: string;
+  valutazioneOdierna: string;
   esamiEmatici: EsamiEmaticiValues;
   valutazioneRischioCV: ValutazioneRischioCardiovascolare;
   conclusioni: string;
@@ -408,11 +434,15 @@ function buildEsenzioneValue(rawValue: string | null | undefined): string {
   return normalized;
 }
 
-function buildReportData(input: GenerateVisitaRefertoInput): Record<string, string> {
+function buildReportData(
+  input: GenerateVisitaRefertoInput,
+  template: ReportTemplateDescriptor = DISLIPIDEMIE_TEMPLATE
+): Record<string, string> {
   const fattoriRischioList = buildFattoriRischioList(input.fattoriRischio, input.formData.bmi);
   const anamnesiPatologicaRemota = cleanupMarkdown(input.anamnesiPatologicaRemota);
   const terapiaIpolipemizzante = buildTerapiaIpolipemizzanteList(input.terapiaIpolipemizzante);
   const terapiaDomiciliare = cleanupMarkdown(input.terapiaDomiciliare);
+  const valutazioneOdierna = cleanupMarkdown(input.valutazioneOdierna);
   const hasFattoriRischio = fattoriRischioList.trim().length > 0;
   const hasAnamnesiPatologicaRemota = anamnesiPatologicaRemota.trim().length > 0;
 
@@ -427,7 +457,7 @@ function buildReportData(input: GenerateVisitaRefertoInput): Record<string, stri
       ? buildConditionalPair('Terapia ipolipemizzante:', terapiaIpolipemizzante)
       : { header: 'terapia ipolipemizzante:', value: 'nessuna in atto.' };
   const terapiaDomiciliarePair = buildConditionalPair(
-    'Restante terapia domiciliare:',
+    'Terapia domiciliare:',
     terapiaDomiciliare
   );
   const hasFhAssessment = input.fhAssessment.enabled;
@@ -447,7 +477,7 @@ function buildReportData(input: GenerateVisitaRefertoInput): Record<string, stri
     .slice(0, 3);
 
   return {
-    titolo: REPORT_TITLE,
+    titolo: template.title,
     data_visita: formatDate(input.formData.data_visita),
     nome: input.paziente.nome,
     cognome: input.paziente.cognome,
@@ -471,6 +501,7 @@ function buildReportData(input: GenerateVisitaRefertoInput): Record<string, stri
     tpipo: terapiaIpolipemizzantePair.value,
     hresttp: terapiaDomiciliarePair.header,
     resttp: terapiaDomiciliarePair.value,
+    valutazione_odierna: valutazioneOdierna,
     ipercol: fhHeader,
     ipercol_score: fhScore,
     data_ee: input.esamiEmatici.data_ee ? formatDate(input.esamiEmatici.data_ee) : '',
@@ -547,31 +578,31 @@ function getErrorMessage(error: unknown): string {
   return 'Errore sconosciuto';
 }
 
-async function loadTemplateFromAsset(): Promise<ArrayBuffer> {
-  const response = await fetch(TEMPLATE_URL);
+async function loadTemplateFromAsset(template: ReportTemplateDescriptor): Promise<ArrayBuffer> {
+  const response = await fetch(template.url);
 
   if (!response.ok) {
-    throw new Error('Template DOCX non trovato');
+    throw new Error(`Template DOCX non trovato: ${template.resourceName}`);
   }
 
   return response.arrayBuffer();
 }
 
-async function loadTemplateFromResource(): Promise<ArrayBuffer> {
-  const resourcePath = await resolveResource(TEMPLATE_RESOURCE_NAME);
+async function loadTemplateFromResource(template: ReportTemplateDescriptor): Promise<ArrayBuffer> {
+  const resourcePath = await resolveResource(template.resourceName);
   const content = await readFile(resourcePath);
   return content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength);
 }
 
-async function loadTemplate(): Promise<ArrayBuffer> {
+async function loadTemplate(template: ReportTemplateDescriptor): Promise<ArrayBuffer> {
   try {
-    return await loadTemplateFromAsset();
+    return await loadTemplateFromAsset(template);
   } catch (assetError) {
     try {
-      return await loadTemplateFromResource();
+      return await loadTemplateFromResource(template);
     } catch (resourceError) {
       throw new Error(
-        `Template DOCX non disponibile. Asset web: ${getErrorMessage(assetError)}. Risorsa Tauri: ${getErrorMessage(resourceError)}`
+        `Template DOCX "${template.resourceName}" non disponibile. Asset web: ${getErrorMessage(assetError)}. Risorsa Tauri: ${getErrorMessage(resourceError)}`
       );
     }
   }
@@ -611,11 +642,17 @@ async function computeSha256Hex(content: Uint8Array): Promise<string> {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
 }
 
+async function resolveReportTemplate(input: GenerateVisitaRefertoInput): Promise<ReportTemplateDescriptor> {
+  const ambulatorio = await getAmbulatorioById(input.ambulatorioId ?? input.paziente.ambulatorio_id);
+  return isScaAmbulatorio(ambulatorio) ? SCA_TEMPLATE : DISLIPIDEMIE_TEMPLATE;
+}
+
 async function resolveAmbulatorioDirectory(input: GenerateVisitaRefertoInput): Promise<string> {
   const baseDirectory = await getReportBaseDirectory();
-  const ambulatorio = await getAmbulatorioById(input.paziente.ambulatorio_id);
+  const ambulatorioId = input.ambulatorioId ?? input.paziente.ambulatorio_id;
+  const ambulatorio = await getAmbulatorioById(ambulatorioId);
   const ambulatorioNome = sanitizeReportFolderName(
-    ambulatorio?.nome || `Ambulatorio ${input.paziente.ambulatorio_id}`
+    ambulatorio?.nome || `Ambulatorio ${ambulatorioId}`
   );
 
   let outputDirectory = await join(baseDirectory, ambulatorioNome);
@@ -648,14 +685,17 @@ export async function resolveVisitaRefertoOutputPaths(
 export async function buildVisitaRefertoDocxContent(
   input: GenerateVisitaRefertoInput
 ): Promise<Uint8Array> {
-  const template = await loadTemplate();
-  return renderTemplate(template, buildReportData(input));
+  const reportTemplate = await resolveReportTemplate(input);
+  const template = await loadTemplate(reportTemplate);
+  return renderTemplate(template, buildReportData(input, reportTemplate));
 }
 
 export async function generateVisitaReferto(
   input: GenerateVisitaRefertoInput
 ): Promise<GenerateVisitaRefertoResult> {
-  const content = await buildVisitaRefertoDocxContent(input);
+  const reportTemplate = await resolveReportTemplate(input);
+  const template = await loadTemplate(reportTemplate);
+  const content = renderTemplate(template, buildReportData(input, reportTemplate));
   const resolvedPath = await resolveOutputPath(input);
   const hiddenPdfPath = buildHiddenPdfPathFromDocx(resolvedPath);
 
@@ -686,9 +726,9 @@ export async function generateVisitaReferto(
       if (visita?.internal_revision_id) {
         await createReportMetadata({
           encounter_revision_id: visita.internal_revision_id,
-          template_code: 'template_dislip',
-          template_name: 'Template Dislipidemie',
-          template_version: 1,
+          template_code: reportTemplate.code,
+          template_name: reportTemplate.name,
+          template_version: reportTemplate.version,
           storage_uri: resolvedPath,
           file_sha256: await computeSha256Hex(content),
           file_size_bytes: content.byteLength,

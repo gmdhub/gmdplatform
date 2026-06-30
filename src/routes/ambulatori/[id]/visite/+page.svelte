@@ -182,6 +182,7 @@
     const valutazioneRischio = parseValutazioneRischioCV(visita.valutazione_rischio_cv, esami);
 
     return {
+      ambulatorioId: visita.ambulatorio_id,
       paziente,
       formData: {
         data_visita: visita.data_visita || '',
@@ -204,9 +205,10 @@
         fumo_ex_eta: fattori?.fumo_ex_eta || ''
       },
       fhAssessment: parseFHAssessment(visita.fh_assessment),
-      anamnesiPatologicaRemota: visita.anamnesi_cardiologica || '',
+      anamnesiPatologicaRemota: visita.anamnesi_cardiologica || visita.anamnesi || '',
       terapiaIpolipemizzante: parseTerapiaIpolipemizzante(visita.terapia_ipolipemizzante),
       terapiaDomiciliare: visita.terapia_domiciliare || '',
+      valutazioneOdierna: visita.valutazione_odierna || '',
       esamiEmatici: esami,
       valutazioneRischioCV: valutazioneRischio,
       conclusioni: visita.conclusioni || '',
@@ -791,7 +793,7 @@
     color: var(--color-text-tertiary);
   }
 
-  .empty-icon .icon-svg {
+  .empty-icon :global(.icon-svg) {
     width: 64px;
     height: 64px;
     stroke-width: 1.5;

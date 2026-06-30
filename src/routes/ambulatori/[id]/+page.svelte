@@ -654,6 +654,19 @@
     width: 80px;
     height: 80px;
     flex-shrink: 0;
+    color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-secondary));
+    border: 1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);
+  }
+
+  .action-icon :global(.icon-svg) {
+    color: currentColor;
+  }
+
+  :global(.card:hover) .action-icon {
+    color: var(--color-secondary);
+    background-color: color-mix(in srgb, var(--color-primary) 18%, var(--color-bg-tertiary));
+    border-color: color-mix(in srgb, var(--color-primary) 32%, transparent);
   }
 
   .action-info {
@@ -697,7 +710,7 @@
     color: var(--color-text-tertiary);
   }
 
-  .empty-icon .icon-svg {
+  .empty-icon :global(.icon-svg) {
     width: 64px;
     height: 64px;
     stroke-width: 1.5;

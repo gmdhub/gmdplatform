@@ -461,10 +461,10 @@ function buildReportData(
     terapiaDomiciliare
   );
   const hasFhAssessment = input.fhAssessment.enabled;
-  const fhHeader = hasFhAssessment ? 'Ipercolesterolemia familiare:' : 'ipercolesterolemia familiare:';
+  const fhHeader = hasFhAssessment ? 'Ipercolesterolemia familiare:' : '';
   const fhScore = hasFhAssessment
     ? `Dutch Lipid Score ${input.fhAssessment.totalScore} - ${buildFhDiagnosisLabel(input.fhAssessment.classification)}`
-    : 'non presente.';
+    : '';
 
   const cardiologoNome = input.firmeVisita.cardiologoNome.trim();
   const specializzandi: ReportSpecializzando[] = input.firmeVisita.mediciInFormazione

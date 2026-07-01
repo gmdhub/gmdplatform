@@ -261,7 +261,14 @@ export async function apiPatch<T>(path: string, body?: unknown, options?: Reques
 
 export async function apiDelete<T>(path: string, options?: RequestOptions): Promise<T> {
   try {
-    return await request<T>(path, { method: 'DELETE' }, options);
+    return await request<T>(
+      path,
+      {
+        method: 'DELETE',
+        body: '{}'
+      },
+      options
+    );
   } catch (error) {
     const isRetryableNetworkOrMethodError =
       error instanceof ApiError &&
